@@ -316,6 +316,7 @@ async function main(): Promise<number> {
         const channels = (process.env.SLACK_CHANNELS ?? '').split(',').map((c) => c.trim()).filter(Boolean);
         const bridge = new SlackBridge(workspace, log, {
           botToken, appToken, channels,
+          approvers: (process.env.BRAIN_APPROVERS ?? '').split(',').map((a) => a.trim()).filter(Boolean),
           maxConcurrent: Number(process.env.BRAIN_MAX_CONCURRENT ?? 4),
           idleReapMinutes: Number(process.env.BRAIN_IDLE_REAP_MINUTES ?? 15),
         });

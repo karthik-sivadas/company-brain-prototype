@@ -83,7 +83,8 @@ description: How to search the Company Brain. Use for ANY question about company
 # brain-search
 
 Company knowledge is extracted by \`pm\` into a local warehouse of **Parquet** tables.
-Answer from that warehouse. There is no git checkout here and no network access —
+Answer from that warehouse. There is no git checkout here, and although the container has
+outbound network you must not answer company questions from a live API —
 a question about "GitHub issues" means the synced \`gh_issues\` table, not a repository
 on disk and not the GitHub API.
 

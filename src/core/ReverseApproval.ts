@@ -49,6 +49,36 @@ interface Held { token: string; plan: PreparedPlan; heldAt: number }
 
 const TOKEN_LINE = /Approval token:\s*([A-Za-z0-9._-]+)/;
 
+/**
+ * The intent comes from model-generated JSON, and every field of it becomes an argv entry to
+ * `pm`. Without validation a value like `--approval-token-stdin` or `-x` is not data — it is
+ * a flag, and the agent would be writing the host command line rather than describing a
+ * record. Validate before building argv, not after.
+ */
+const SAFE_TABLE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+const SAFE_ENDPOINT = /^[a-z0-9][a-z0-9_-]{0,63}:[a-z0-9][a-z0-9_-]{0,63}$/;
+const SAFE_FIELD = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+
+function rejectIntent(intent: ReverseIntent): string | undefined {
+  if (!SAFE_TABLE.test(intent.sourceTable)) {
+    return `source table "${intent.sourceTable}" is not a plain table name`;
+  }
+  if (!SAFE_ENDPOINT.test(intent.destination)) {
+    return `destination "${intent.destination}" must be connector:credential`;
+  }
+  const pairs = Object.entries(intent.map ?? {});
+  if (pairs.length === 0) return 'the proposal mapped no fields';
+  if (pairs.length > 64) return 'too many mapped fields';
+  for (const [from, to] of pairs) {
+    // A colon would split into the wrong pair; a leading dash would become a flag.
+    if (!SAFE_FIELD.test(from)) return `source field "${from}" is not a plain field name`;
+    if (!SAFE_FIELD.test(String(to))) return `destination field "${to}" is not a plain field name`;
+  }
+  if (intent.name !== undefined && !SAFE_FIELD.test(intent.name)) return 'plan name is not a plain name';
+  return undefined;
+}
+
+
 export class ReverseApproval {
   /** planId -> token. In memory only: a restart should invalidate pending approvals. */
   private readonly held = new Map<string, Held>();
@@ -70,6 +100,9 @@ export class ReverseApproval {
    * Run WITHOUT --json on purpose: that is the only output that carries the token.
    */
   prepare(intent: ReverseIntent): { ok: true; plan: PreparedPlan } | { ok: false; error: string } {
+    const rejected = rejectIntent(intent);
+    if (rejected) return { ok: false, error: rejected };
+
     const name = intent.name ?? `slack-${Date.now().toString(36)}`;
     const args = [
       'reverse', 'plan', name,

@@ -163,3 +163,47 @@ test('mentions of other people survive; only ours is stripped', async () => {
   await dispatch(bridge, mention('800.1', `<@${BOT_USER}> what did <@U999> ship?`));
   expect(turns[0]!.question).toBe('what did <@U999> ship?');
 });
+
+// ── argv injection into the host reverse-ETL planner ────────────────────────
+import { ReverseApproval } from '../src/core/ReverseApproval.ts';
+
+function approver() {
+  const ws = new Workspace(mkdtempSync(join(tmpdir(), 'brain-rev-')));
+  return new ReverseApproval(ws, new Logger(true));
+}
+
+test('a proposed write cannot smuggle a flag into the pm command line', () => {
+  const ra = approver();
+  // Every field of the intent becomes argv. A leading dash would be read as a flag,
+  // and a colon in a map pair would split into the wrong place.
+  const attempts = [
+    { sourceTable: '--approval-token-stdin', destination: 'outbox:ob', map: { a: 'b' } },
+    { sourceTable: 'gh_issues', destination: '--destination=evil', map: { a: 'b' } },
+    { sourceTable: 'gh_issues', destination: 'outbox:ob', map: { '--map': 'b' } },
+    { sourceTable: 'gh_issues', destination: 'outbox:ob', map: { a: 'b:c' } },
+    { sourceTable: 'gh_issues; rm -rf /', destination: 'outbox:ob', map: { a: 'b' } },
+    { sourceTable: 'gh_issues', destination: 'outbox', map: { a: 'b' } },
+    { sourceTable: 'gh_issues', destination: 'outbox:ob', map: {} },
+  ];
+  for (const intent of attempts) {
+    const result = ra.prepare(intent as never);
+    expect(result.ok).toBe(false);
+  }
+});
+
+test('a well-formed proposal passes the guard and reaches pm', () => {
+  // In a temp workspace there is no pm binary, so this fails downstream — which is the
+  // point: it got past validation. A guard that rejected everything would pass the test
+  // above while making the feature useless, so this asserts the other direction.
+  let error = '';
+  try {
+    const result = approver().prepare({
+      sourceTable: 'gh_issues', destination: 'outbox:ob', map: { title: 'title' },
+    });
+    error = result.ok ? '' : result.error;
+  } catch (thrown) {
+    error = (thrown as Error).message; // spawning a non-existent pm throws
+  }
+  expect(error).not.toContain('is not a plain');
+  expect(error).not.toContain('mapped no fields');
+});

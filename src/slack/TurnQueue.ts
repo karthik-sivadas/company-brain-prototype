@@ -32,6 +32,15 @@ export class TurnQueue {
   }
 
   get activeCount(): number { return this.running.size; }
+
+  /**
+   * Thread keys with a turn in flight.
+   *
+   * The reaper needs this: it decides what to remove from `lastTurnAt`, which is only
+   * stamped when a turn COMPLETES. A turn running longer than the idle threshold therefore
+   * looks idle, and the reaper would `docker rm -f` the container out from under it.
+   */
+  get busyThreadKeys(): ReadonlySet<string> { return this.running; }
   get queuedCount(): number { return this.pending.length; }
 
   async submit<T>(turn: QueuedTurn<T>): Promise<T> {

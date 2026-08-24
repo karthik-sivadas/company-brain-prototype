@@ -21,6 +21,12 @@ export interface SlackConfig {
   channels?: string[];
   maxConcurrent?: number;
   idleReapMinutes?: number;
+  /**
+   * Slack user ids permitted to approve an external write. Empty means anyone who can see
+   * the card can spend the approval — fine for a single-operator demo, wrong for a shared
+   * channel, so it is stated explicitly rather than left implicit.
+   */
+  approvers?: string[];
 }
 
 const WORKING = 'hourglass_flowing_sand';
@@ -139,6 +145,12 @@ export class SlackBridge {
         channel: container, thread_ts: thread?.thread_ts ?? thread?.ts, text,
       });
 
+      const allowed = this.config.approvers ?? [];
+      if (allowed.length > 0 && !allowed.includes(who)) {
+        await post(`:no_entry: <@${who}> is not on the approver list for external writes.`);
+        this.log.warn(`refused an approval from ${who} for ${planId}`);
+        return;
+      }
       if (!this.approvals.pending(planId)) { await post(`:warning: <@${who}> that approval is no longer pending.`); return; }
       await post(`:hourglass_flowing_sand: Approved by <@${who}> — writing now.`);
       const result = this.approvals.approve(planId, who);
@@ -151,6 +163,14 @@ export class SlackBridge {
       const who = (body as { user?: { id?: string } }).user?.id ?? 'unknown';
       const channel = (body as { channel?: { id?: string } }).channel?.id ?? '';
       const thread = (body as { message?: { thread_ts?: string; ts?: string } }).message;
+      const mayReject = this.config.approvers ?? [];
+      if (mayReject.length > 0 && !mayReject.includes(who)) {
+        await client.chat.postMessage({
+          channel, thread_ts: thread?.thread_ts ?? thread?.ts,
+          text: `:no_entry: <@${who}> is not on the approver list.`,
+        });
+        return;
+      }
       this.approvals.reject(planId);
       await client.chat.postMessage({
         channel, thread_ts: thread?.thread_ts ?? thread?.ts,
@@ -313,7 +333,11 @@ export class SlackBridge {
   private startReaper(): void {
     const minutes = this.config.idleReapMinutes ?? 15;
     this.reaper = setInterval(() => {
+      const busy = this.queue.busyThreadKeys;
       for (const record of this.router.idleSince(minutes)) {
+        // lastTurnAt is stamped on COMPLETION, so a long-running turn reads as idle.
+        // Removing its container mid-turn would hang the turn for the full timeout.
+        if (busy.has(record.threadKey)) continue;
         if (!this.runner.isContainerRunning(record.sandbox)) continue;
         this.runner.stopContainer(record.sandbox);
         this.log.info(`reaped idle sandbox ${record.sandbox} (volume kept)`);

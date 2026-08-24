@@ -25,7 +25,8 @@ export interface SandboxOptions {
  * Layout, and the reason for each choice:
  *   /workspace   the ONE volume per workspace — sessions and scratch; the only writable mount
  *   /brain       skills and documents, read-only (the agent must not rewrite its own instructions)
- *   /warehouse   pm's Parquet output, read-only (the agent queries data, it cannot corrupt it)
+ *   /warehouse   pm's Parquet output, read-only — but see /pmroot: the warehouse lives
+ *                INSIDE the pm project, so this :ro mount is not a real guarantee
  *   /pmroot      the pm project, writable — pm runs here so the agent can extract data itself
  *
  * The container is hardened: non-root, read-only root filesystem, all capabilities dropped,
@@ -112,6 +113,9 @@ export class SandboxRunner {
       '--pids-limit', String(options.pids ?? 512),
       '-v', `${volume}:/workspace`,
       '-v', `${this.workspace.brainDir}:/brain:ro`,
+      // Read-only, and honest about what that buys: the warehouse sits inside the pm
+      // project mounted rw below, so this is the *convenient* read path, not a boundary.
+      // Making it one means moving the warehouse out from under data/pm.
       '-v', `${this.workspace.warehouseDir}:/warehouse:ro`,
       // The pm project, writable: pm is baked into the image, so the agent can inspect
       // connectors and run extraction itself instead of asking the host to do it.
@@ -178,8 +182,9 @@ export class SandboxRunner {
     const sessionDir = options.sessionDir ?? '/workspace/sessions';
     // omp's default system prompt is a coding-assistant prompt, which sent the agent
     // looking for .git/config and package.json and pulled it into omp's live `issue://`
-    // GitHub resource — none of which exist in a sealed, networkless container. The brief
-    // states the actual environment and points at the warehouse.
+    // GitHub resource. The container is NOT sealed — no --network flag is passed, so egress
+    // is open — but there is no repository in it and no gh CLI. The brief states the real
+    // environment and points at the warehouse as the source of truth.
     const args = [
       'exec', '-i', '-w', '/workspace', name,
       'omp', '--mode', 'rpc',
@@ -193,9 +198,21 @@ export class SandboxRunner {
     child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
 
     const client = new OmpRpcClient(child.stdin, child.stdout);
+
+    // Without this, a child that dies early — the container reaped underneath it, docker
+    // failing, omp exiting on a bad model config — leaves every RPC waiter pending until the
+    // turn timeout while holding a concurrency slot. The exit code and captured stderr are
+    // the only diagnosis available, so they go into the error.
+    const died = new Promise<never>((_resolve, reject) => {
+      child.once('error', (err) => reject(new Error(`docker exec failed: ${err.message}`)));
+      child.once('exit', (code, signal) => reject(new Error(
+        `the sandbox process exited early (${signal ? `signal ${signal}` : `code ${code}`})`,
+      )));
+    });
+
     try {
-      await client.waitForReady();
-      return await client.prompt(question, events);
+      await Promise.race([client.waitForReady(), died]);
+      return await Promise.race([client.prompt(question, events), died]);
     } catch (error) {
       const detail = stderr.trim().slice(0, 400);
       throw new Error(`${(error as Error).message}${detail ? `\n  sandbox stderr: ${detail}` : ''}`);
