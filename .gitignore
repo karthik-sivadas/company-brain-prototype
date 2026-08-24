@@ -8,3 +8,4 @@ brain/.skills-catalog/
 data/pm/.polymetrics/state/
 data/pm/.polymetrics/config.yaml
 brain/skills/skills.md
+node_modules/
