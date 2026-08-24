@@ -105,6 +105,18 @@ approves. Two shapes:
 }
 ```
 
+`command` is the **CLI command path**, not the write-action name. `pm github repo create`
+means `["repo","create"]` — never `["repos","create-for-authenticated-user"]`, which is the
+API operation and will not resolve. Confirm the path exists before proposing:
+
+```bash
+cd /pmroot && pm <connector> --help                # command groups
+cd /pmroot && pm <connector> <group> --help        # commands in a group
+cd /pmroot && pm <connector> <group> <cmd> --help  # its exact flags
+```
+
+Boolean flags such as `--private` are declared `(boolean)`; pass `true`, not `"true"`.
+
 Build a correct proposal first — you may inspect and dry-run freely:
 
 ```bash

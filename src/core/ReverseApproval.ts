@@ -40,7 +40,7 @@ export interface CommandIntent {
   kind: 'command';
   connector: string;
   command: string[];            // e.g. ['issue','create']
-  flags?: Record<string, string>;
+  flags?: Record<string, string | boolean | number>;
   credential?: string;
   config?: Record<string, string>;
   reason?: string;
@@ -106,7 +106,10 @@ function rejectCommand(intent: CommandIntent): string | undefined {
   if (intent.credential !== undefined && !SAFE_NAME.test(intent.credential)) return 'credential is not a plain name';
   for (const [flag, value] of Object.entries(intent.flags ?? {})) {
     if (!SAFE_NAME.test(flag)) return `flag "${flag}" is not a plain flag name`;
-    if (typeof value !== 'string') return `flag "${flag}" must be a string`;
+    // Booleans and numbers are legitimate: pm declares boolean flags such as --private,
+    // which take no value at all. Only strings can carry an injected dash.
+    if (typeof value === 'boolean' || typeof value === 'number') continue;
+    if (typeof value !== 'string') return `the value of "${flag}" must be text, a number or true/false`;
     if (value.startsWith('-')) return `the value of "${flag}" may not begin with a dash`;
     if (value.length > 8000) return `the value of "${flag}" is too long`;
   }
@@ -179,7 +182,11 @@ export class ReverseApproval {
     if (rejected) return { ok: false, error: rejected };
 
     const argv: string[] = [intent.connector, ...intent.command];
-    for (const [flag, value] of Object.entries(intent.flags ?? {})) argv.push(`--${flag}`, value);
+    for (const [flag, value] of Object.entries(intent.flags ?? {})) {
+      if (value === false) continue;            // omitted rather than passed as "false"
+      if (value === true) { argv.push(`--${flag}`); continue; }  // boolean flags take no value
+      argv.push(`--${flag}`, String(value));
+    }
     if (intent.credential) argv.push('--credential', intent.credential);
     for (const [key, value] of Object.entries(intent.config ?? {})) argv.push('--config', `${key}=${value}`);
 
