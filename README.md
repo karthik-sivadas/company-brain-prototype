@@ -115,6 +115,32 @@ The container runs non-root (uid 10001) with a read-only root filesystem, `--cap
 **Not yet done: authorization.** Model credentials are currently shared by mounting the host's
 `~/.omp/agent`. Replacing that with a scoped, per-workspace token is the next piece of work.
 
+## Slack
+
+```bash
+bun run brain slack doctor     # token + docker + image checks
+bun run brain slack start      # Socket Mode bridge (no public URL needed)
+bun run brain slack threads    # known threads and their sandboxes
+```
+
+Ask in a channel (`@Company Brain …`) or DM. The answer returns in-thread with a ⏳ → ✅ reaction,
+a tools/elapsed context line and 👍/👎 buttons.
+
+**One sandbox and volume per Slack thread.** `brain-thread-<team>-<channel>-<ts>` /
+`brain-ws-thread-…`. A thread registry (`data/slack/threads.json`, written atomically) survives
+bridge restarts, so a message in an old thread is still recognised as a follow-up.
+
+**Follow-ups keep context — verified.** Turn 1 stored a codeword, the container was destroyed, and
+turn 2 in a brand-new container on the same volume recalled it. Continuation uses a per-thread
+session directory plus `--continue`; a follow-up needs **no @mention** (plain `message` events are
+accepted when the thread is already in the registry).
+
+Turns for one thread are serialised — a session file cannot take concurrent writers — while
+different threads run in parallel up to `BRAIN_MAX_CONCURRENT` (default 4). Idle containers are
+reaped after `BRAIN_IDLE_REAP_MINUTES` (default 15); volumes, and therefore memory, persist.
+
+Environment: `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, optional `SLACK_CHANNELS` (allow-list).
+
 ## Commands
 
 | Command | Purpose |
@@ -127,6 +153,7 @@ The container runs non-root (uid 10001) with a read-only root filesystem, `--cap
 | `bun run brain tables` | list queryable Parquet tables |
 | `bun run brain ask "…"` | ask a question on the host |
 | `bun run brain sandbox build\|ask\|stop` | run the agent in a container, one volume per workspace |
+| `bun run brain slack doctor\|start\|threads` | Slack bridge (Socket Mode), one sandbox per thread |
 
 ## Notes
 

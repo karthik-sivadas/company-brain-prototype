@@ -9,6 +9,9 @@ import { PrerequisiteError } from './errors.ts';
 export interface SandboxOptions {
   /** Logical workspace name. Each gets exactly one persistent volume. */
   workspace: string;
+  /** Explicit container/volume names, used by the Slack bridge for per-thread sandboxes. */
+  sandboxName?: string;
+  volumeName?: string;
   image?: string;
   memory?: string;
   pids?: number;
@@ -61,8 +64,8 @@ export class SandboxRunner {
   /** One volume per workspace, created on demand. */
   volumeName(workspace: string): string { return `brain-ws-${workspace}`; }
 
-  ensureVolume(workspace: string): string {
-    const name = this.volumeName(workspace);
+  ensureVolume(workspace: string, explicit?: string): string {
+    const name = explicit ?? this.volumeName(workspace);
     if (spawnSync(this.docker, ['volume', 'inspect', name], { stdio: 'ignore' }).status !== 0) {
       spawnSync(this.docker, ['volume', 'create', name], { stdio: 'ignore' });
       this.log.ok(`created volume ${name}`);
@@ -73,9 +76,17 @@ export class SandboxRunner {
   containerName(workspace: string): string { return `brain-${workspace}`; }
 
   isRunning(workspace: string): boolean {
-    const out = spawnSync(this.docker,
-      ['inspect', '-f', '{{.State.Running}}', this.containerName(workspace)], { encoding: 'utf8' });
+    return this.isContainerRunning(this.containerName(workspace));
+  }
+
+  isContainerRunning(name: string): boolean {
+    const out = spawnSync(this.docker, ['inspect', '-f', '{{.State.Running}}', name], { encoding: 'utf8' });
     return out.status === 0 && out.stdout.trim() === 'true';
+  }
+
+  /** Removes a container by explicit name, keeping its volume. Used by the idle reaper. */
+  stopContainer(name: string): void {
+    spawnSync(this.docker, ['rm', '-f', name], { stdio: 'ignore' });
   }
 
   /** Starts (or reuses) the workspace container. Idempotent. */
@@ -84,11 +95,11 @@ export class SandboxRunner {
     const image = options.image ?? SandboxRunner.IMAGE;
     if (!this.imageExists(image)) this.buildImage(image);
 
-    const name = this.containerName(options.workspace);
-    if (this.isRunning(options.workspace)) return name;
+    const name = options.sandboxName ?? this.containerName(options.workspace);
+    if (this.isContainerRunning(name)) return name;
     spawnSync(this.docker, ['rm', '-f', name], { stdio: 'ignore' }); // clear a stopped leftover
 
-    const volume = this.ensureVolume(options.workspace);
+    const volume = this.ensureVolume(options.workspace, options.volumeName);
     const args = [
       'run', '-d', '--name', name,
       '--user', '10001:10001',
@@ -126,13 +137,23 @@ export class SandboxRunner {
     this.log.ok(`sandbox ${this.containerName(workspace)} removed (volume kept)`);
   }
 
-  /** Opens an RPC session inside the sandbox and runs one prompt. */
-  async ask(question: string, options: SandboxOptions, events: TurnEvents = {}): Promise<TurnResult> {
+  /**
+   * Opens an RPC session inside the sandbox and runs one prompt.
+   *
+   * `sessionDir` + `continueSession` is what makes a Slack thread remember itself: a fresh
+   * process pointed at the same directory with `--continue` resumes the conversation, verified
+   * across three separate processes.
+   */
+  async ask(
+    question: string,
+    options: SandboxOptions & { sessionDir?: string; continueSession?: boolean },
+    events: TurnEvents = {},
+  ): Promise<TurnResult> {
     const name = this.start(options);
-    const child = spawn(this.docker, [
-      'exec', '-i', '-w', '/workspace', name,
-      'omp', '--mode', 'rpc', '--session-dir', '/workspace/sessions',
-    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const sessionDir = options.sessionDir ?? '/workspace/sessions';
+    const args = ['exec', '-i', '-w', '/workspace', name, 'omp', '--mode', 'rpc', '--session-dir', sessionDir];
+    if (options.continueSession) args.push('--continue');
+    const child = spawn(this.docker, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
     let stderr = '';
     child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });

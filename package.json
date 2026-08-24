@@ -11,5 +11,8 @@
     "sync": "bun run src/cli.ts sync",
     "ask": "bun run src/cli.ts ask"
   },
-  "engines": { "bun": ">=1.1" }
+  "engines": { "bun": ">=1.1" },
+  "dependencies": {
+    "@slack/bolt": "^5.0.0"
+  }
 }

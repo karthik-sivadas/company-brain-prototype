@@ -27,6 +27,10 @@ const USAGE = `company-brain
   bun run brain sandbox build              build the sandbox image
   bun run brain sandbox ask "<q>" [ws]     ask inside a sandbox (one volume per workspace)
   bun run brain sandbox stop [ws]          remove the container (volume is kept)
+
+  bun run brain slack doctor               check Slack tokens and prerequisites
+  bun run brain slack start                run the Slack bridge (Socket Mode)
+  bun run brain slack threads              list known Slack threads and their sandboxes
 `;
 
 async function main(): Promise<number> {
@@ -142,6 +146,61 @@ async function main(): Promise<number> {
       }
 
       log.fail('usage: bun run brain sandbox <build|ask|stop>');
+      return 1;
+    }
+
+    case 'slack': {
+      const { SlackBridge } = await import('./slack/SlackBridge.ts');
+      const { ThreadRouter } = await import('./slack/ThreadRouter.ts');
+      const [sub] = rest;
+      const botToken = process.env.SLACK_BOT_TOKEN ?? '';
+      const appToken = process.env.SLACK_APP_TOKEN ?? '';
+
+      if (sub === 'doctor') {
+        log.step('Slack prerequisites');
+        const checks: Array<[string, boolean, string]> = [
+          ['SLACK_BOT_TOKEN', botToken.startsWith('xoxb-'), botToken ? 'present' : 'missing (xoxb-…)'],
+          ['SLACK_APP_TOKEN', appToken.startsWith('xapp-'), appToken ? 'present' : 'missing (xapp-…, needs connections:write)'],
+        ];
+        for (const [name, ok, detail] of checks) ok ? log.ok(`${name} — ${detail}`) : log.fail(`${name} — ${detail}`);
+        const sandbox = new SandboxRunner(workspace, log);
+        try { sandbox.assertDocker(); log.ok('docker reachable'); }
+        catch (e) { log.fail((e as Error).message); }
+        log.info(sandbox.imageExists() ? 'sandbox image present' : 'sandbox image missing → bun run brain sandbox build');
+        const router = new ThreadRouter(workspace);
+        log.info(`known threads: ${router.all().length}`);
+        return checks.every(([, ok]) => ok) ? 0 : 1;
+      }
+
+      if (sub === 'threads') {
+        const router = new ThreadRouter(workspace);
+        const all = router.all();
+        if (all.length === 0) { log.info('no threads yet'); return 0; }
+        for (const t of all) log.ok(`${t.threadKey} · turns=${t.turns} · ${t.sandbox} · last ${t.lastTurnAt}`);
+        return 0;
+      }
+
+      if (sub === 'start') {
+        if (!botToken || !appToken) {
+          log.fail('SLACK_BOT_TOKEN and SLACK_APP_TOKEN are required — see `brain slack doctor`');
+          return 1;
+        }
+        log.step('Slack bridge');
+        const channels = (process.env.SLACK_CHANNELS ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+        const bridge = new SlackBridge(workspace, log, {
+          botToken, appToken, channels,
+          maxConcurrent: Number(process.env.BRAIN_MAX_CONCURRENT ?? 4),
+          idleReapMinutes: Number(process.env.BRAIN_IDLE_REAP_MINUTES ?? 15),
+        });
+        await bridge.start();
+        const shutdown = async () => { await bridge.stop(); process.exit(0); };
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
+        await new Promise(() => {}); // run until signalled
+        return 0;
+      }
+
+      log.fail('usage: bun run brain slack <doctor|start|threads>');
       return 1;
     }
 
