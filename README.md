@@ -88,6 +88,33 @@ procedure, and it will check the connector's real schema before answering.
 - omp used `brain-setup` to plan a Slack integration, correcting the skill's generic example
   after inspecting the installed connector's actual schema
 
+## Sandboxed execution
+
+By default the agent runs on the host. It can also run inside a container, driven over OMP's
+newline-delimited JSON RPC protocol:
+
+```bash
+bun run brain sandbox build
+bun run brain sandbox ask "how many issues are synced?" needletail
+bun run brain sandbox stop needletail
+```
+
+**One volume per workspace.** Each workspace name maps to exactly one Docker volume
+(`brain-ws-<workspace>`) mounted at `/workspace` — the agent's sessions and scratch space, and the
+only writable mount. It survives the container, so a workspace keeps its history.
+
+| Mount | Mode | Why |
+|---|---|---|
+| `brain-ws-<workspace>` → `/workspace` | rw | the per-workspace volume: sessions, scratch |
+| `brain/` → `/brain` | **ro** | the agent must not rewrite its own instructions |
+| `warehouse/` → `/warehouse` | **ro** | it queries data; it cannot corrupt it |
+
+The container runs non-root (uid 10001) with a read-only root filesystem, `--cap-drop=ALL`,
+`--security-opt no-new-privileges`, memory and PID caps, and no Docker socket.
+
+**Not yet done: authorization.** Model credentials are currently shared by mounting the host's
+`~/.omp/agent`. Replacing that with a scoped, per-workspace token is the next piece of work.
+
 ## Commands
 
 | Command | Purpose |
@@ -98,7 +125,8 @@ procedure, and it will check the connector's real schema before answering.
 | `bun run brain skills` | regenerate and transport skills |
 | `bun run brain sync [connector]` | extract |
 | `bun run brain tables` | list queryable Parquet tables |
-| `bun run brain ask "…"` | ask a question |
+| `bun run brain ask "…"` | ask a question on the host |
+| `bun run brain sandbox build\|ask\|stop` | run the agent in a container, one volume per workspace |
 
 ## Notes
 

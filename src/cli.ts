@@ -12,6 +12,7 @@ import { PmProject } from './core/PmProject.ts';
 import { SkillTransport } from './core/SkillTransport.ts';
 import { OmpAgent } from './core/OmpAgent.ts';
 import { Doctor } from './core/Doctor.ts';
+import { SandboxRunner } from './core/SandboxRunner.ts';
 
 const USAGE = `company-brain
 
@@ -21,7 +22,11 @@ const USAGE = `company-brain
   bun run brain skills              regenerate + transport skills into brain/skills
   bun run brain sync [connector]    extract into the warehouse
   bun run brain tables              list queryable Parquet tables
-  bun run brain ask "<question>"    ask the brain (runs omp)
+  bun run brain ask "<question>"    ask the brain on the host (runs omp)
+
+  bun run brain sandbox build              build the sandbox image
+  bun run brain sandbox ask "<q>" [ws]     ask inside a sandbox (one volume per workspace)
+  bun run brain sandbox stop [ws]          remove the container (volume is kept)
 `;
 
 async function main(): Promise<number> {
@@ -112,6 +117,32 @@ async function main(): Promise<number> {
       if (tables.length === 0) { log.warn('no tables yet — run `bun run brain sync`'); return 0; }
       for (const t of tables) log.ok(t);
       return 0;
+    }
+
+    case 'sandbox': {
+      const sandbox = new SandboxRunner(workspace, log);
+      const [sub, ...subRest] = rest;
+      const wsName = (name: string | undefined) => name ?? 'default';
+
+      if (sub === 'build') { log.step('Sandbox image'); sandbox.buildImage(); return 0; }
+
+      if (sub === 'stop') { sandbox.stop(wsName(subRest[0])); return 0; }
+
+      if (sub === 'ask') {
+        const question = subRest[0];
+        if (!question) { log.fail('usage: bun run brain sandbox ask "<question>" [workspace]'); return 1; }
+        const ws = wsName(subRest[1]);
+        log.step(`Sandbox ask (workspace "${ws}")`);
+        const result = await sandbox.ask(question, { workspace: ws }, {
+          onTool: (name) => log.info(`tool: ${name}`),
+          onText: (delta) => process.stdout.write(delta),
+        });
+        if (!result.text.endsWith('\n')) process.stdout.write('\n');
+        return 0;
+      }
+
+      log.fail('usage: bun run brain sandbox <build|ask|stop>');
+      return 1;
     }
 
     case 'ask': {
