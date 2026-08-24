@@ -22,6 +22,7 @@ BRAIN=$([ -d /brain ] && echo /brain || echo brain)
 
 ## Tables available (paths relative to $WAREHOUSE)
 - `ws_01f1f8ae9139d228/github/conn_206bd2e06f84fac6/tables/gh_issues.parquet`
+- `ws_01f1f8ae9139d228/github/conn_3fa7dea874c16bbd/tables/github_releases.parquet`
 - `ws_01f1f8ae9139d228/github/conn_bb163921b9d1b197/tables/github_pull_requests.parquet`
 
 Discover any table:

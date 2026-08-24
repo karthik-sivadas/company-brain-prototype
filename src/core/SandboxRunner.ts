@@ -26,6 +26,7 @@ export interface SandboxOptions {
  *   /workspace   the ONE volume per workspace — sessions and scratch; the only writable mount
  *   /brain       skills and documents, read-only (the agent must not rewrite its own instructions)
  *   /warehouse   pm's Parquet output, read-only (the agent queries data, it cannot corrupt it)
+ *   /pmroot      the pm project, writable — pm runs here so the agent can extract data itself
  *
  * The container is hardened: non-root, read-only root filesystem, all capabilities dropped,
  * no privilege escalation, memory and PID caps, and no Docker socket.
@@ -112,6 +113,10 @@ export class SandboxRunner {
       '-v', `${volume}:/workspace`,
       '-v', `${this.workspace.brainDir}:/brain:ro`,
       '-v', `${this.workspace.warehouseDir}:/warehouse:ro`,
+      // The pm project, writable: pm is baked into the image, so the agent can inspect
+      // connectors and run extraction itself instead of asking the host to do it.
+      // pm is rooted by working directory, so it is used as `cd /pmroot && pm …`.
+      '-v', `${this.workspace.pmProjectDir}:/pmroot`,
     ];
 
     if (options.shareCredentials !== false) {

@@ -1,5 +1,28 @@
 # Company Brain sandbox: the agent runs here, never on the host.
-# Contains omp (reasoning) + duckdb (query). No secrets are baked in.
+# Contains pm (extraction CLI) + omp (reasoning) + duckdb (query). No secrets are baked in.
+
+# ── pm ───────────────────────────────────────────────────────────────────────
+# Built from source rather than copied from the host: the host binary is Mach-O
+# (macOS) and cannot execute in a Linux container, and a bind-mounted artifact
+# would make the image depend on someone having built it first. Building here
+# means `brain sandbox build` produces a working sandbox on any machine.
+#
+# CGO is required — the go-duckdb driver fails to link with CGO_ENABLED=0
+# ("undefined: Conn").
+FROM golang:1.26-bookworm AS pm-build
+ARG PM_REPO=https://github.com/polymetrics-ai/cli.git
+ARG PM_REF=main
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${PM_REF}" "${PM_REPO}" /src
+WORKDIR /src
+# -buildvcs=false: the checkout is shallow and Go's VCS stamping fails on it.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=1 go build -buildvcs=false -o /out/pm ./cmd/pm \
+ && /out/pm --version || true
+
+# ── runtime ──────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 ARG TARGETARCH=arm64
@@ -31,6 +54,12 @@ RUN set -eux; \
     curl -fsSL -o /usr/local/bin/omp \
       "https://github.com/can1357/oh-my-pi/releases/latest/download/${OMP_ASSET}"; \
     chmod +x /usr/local/bin/omp
+
+# pm, from the builder stage. Present for inspection (connectors, catalog, connections
+# list). Extraction still runs on the host: /warehouse is mounted read-only and pm's
+# project state is single-writer, so a sync from inside a per-thread container would
+# either fail or corrupt state under concurrency.
+COPY --from=pm-build /out/pm /usr/local/bin/pm
 
 RUN groupadd -g 10001 agent && useradd -u 10001 -g 10001 -m -s /bin/bash agent \
  && mkdir -p /workspace /brain /warehouse && chown -R 10001:10001 /workspace /home/agent
