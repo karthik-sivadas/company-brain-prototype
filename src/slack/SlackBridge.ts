@@ -5,6 +5,7 @@ import { SandboxRunner } from '../core/SandboxRunner.ts';
 import { ThreadRouter } from './ThreadRouter.ts';
 import { TurnQueue } from './TurnQueue.ts';
 import { SlackRenderer } from './SlackRenderer.ts';
+import { ReverseApproval } from '../core/ReverseApproval.ts';
 
 /**
  * Message subtypes that still represent a person saying something new.
@@ -41,6 +42,8 @@ export class SlackBridge {
   private readonly router: ThreadRouter;
   private readonly queue: TurnQueue;
   private readonly runner: SandboxRunner;
+  /** Holds reverse-ETL approval tokens on the host — never in Slack, never in the sandbox. */
+  private readonly approvals: ReverseApproval;
   private readonly renderer = new SlackRenderer();
   private readonly seenEvents = new Set<string>();
   private reaper?: ReturnType<typeof setInterval>;
@@ -59,6 +62,7 @@ export class SlackBridge {
     this.router = new ThreadRouter(workspace);
     this.queue = new TurnQueue(config.maxConcurrent ?? 4);
     this.runner = new SandboxRunner(workspace, log);
+    this.approvals = new ReverseApproval(workspace, log);
     this.register();
   }
 
@@ -122,6 +126,35 @@ export class SlackBridge {
       await this.handle({
         client, team, channel: m.channel, user: m.user,
         messageTs: m.ts, threadTs, text: m.text, isDm,
+      });
+    });
+
+    this.app.action('brain_reverse_approve', async ({ ack, body, action, client }) => {
+      await ack();
+      const planId = (action as { value?: string }).value ?? '';
+      const who = (body as { user?: { id?: string } }).user?.id ?? 'unknown';
+      const container = (body as { channel?: { id?: string } }).channel?.id ?? '';
+      const thread = (body as { message?: { thread_ts?: string; ts?: string } }).message;
+      const post = (text: string) => client.chat.postMessage({
+        channel: container, thread_ts: thread?.thread_ts ?? thread?.ts, text,
+      });
+
+      if (!this.approvals.pending(planId)) { await post(`:warning: <@${who}> that approval is no longer pending.`); return; }
+      await post(`:hourglass_flowing_sand: Approved by <@${who}> — writing now.`);
+      const result = this.approvals.approve(planId, who);
+      await post(result.ok ? `:white_check_mark: ${result.message}.` : `:x: The write failed — ${result.message}`);
+    });
+
+    this.app.action('brain_reverse_reject', async ({ ack, body, action, client }) => {
+      await ack();
+      const planId = (action as { value?: string }).value ?? '';
+      const who = (body as { user?: { id?: string } }).user?.id ?? 'unknown';
+      const channel = (body as { channel?: { id?: string } }).channel?.id ?? '';
+      const thread = (body as { message?: { thread_ts?: string; ts?: string } }).message;
+      this.approvals.reject(planId);
+      await client.chat.postMessage({
+        channel, thread_ts: thread?.thread_ts ?? thread?.ts,
+        text: `:no_entry: Rejected by <@${who}>. Nothing was written and the approval is discarded.`,
       });
     });
 
@@ -263,6 +296,7 @@ export class SlackBridge {
       // credentials). If it decided data was missing but extractable, it left a request
       // on the shared volume; run it here, on the host, and report back in-thread.
       await this.runPendingSyncRequest(ctx, record.sandbox);
+      await this.runPendingReverseRequest(ctx, record.sandbox);
     } catch (error) {
       const rendered = this.renderer.error((error as Error).message);
       await ctx.client.chat.postMessage({
@@ -333,6 +367,84 @@ export class SlackBridge {
         text: `:x: The extraction failed: ${(error as Error).message}`,
       });
     }
+  }
+
+  /**
+   * Turns a write the agent proposed into an approval card.
+   *
+   * The agent cannot approve its own mutation — pm omits the token from --json for exactly
+   * that reason. So it writes an intent, the host plans it (human-readable, which is the
+   * only output carrying the token), and a person presses Approve here.
+   */
+  private async runPendingReverseRequest(
+    ctx: { client: App['client']; channel: string; threadTs: string },
+    container: string,
+  ): Promise<void> {
+    const REQUEST = '/workspace/requests/reverse.json';
+    const raw = this.runner.readFile(container, REQUEST).trim();
+    if (!raw) return;
+    this.runner.exec(container, ['rm', '-f', REQUEST]);
+
+    let intent: { sourceTable?: string; destination?: string; map?: Record<string, string>; reason?: string };
+    try { intent = JSON.parse(raw); }
+    catch { this.log.warn(`ignored an unparseable reverse request: ${raw.slice(0, 120)}`); return; }
+
+    if (!intent.sourceTable || !intent.destination || !intent.map) {
+      await ctx.client.chat.postMessage({
+        channel: ctx.channel, thread_ts: ctx.threadTs,
+        text: ':x: The proposed write was incomplete — it needs sourceTable, destination and map.',
+      });
+      return;
+    }
+
+    const prepared = this.approvals.prepare({
+      sourceTable: intent.sourceTable,
+      destination: intent.destination,
+      map: intent.map,
+      reason: intent.reason,
+    });
+
+    if (!prepared.ok) {
+      await ctx.client.chat.postMessage({
+        channel: ctx.channel, thread_ts: ctx.threadTs,
+        text: `:x: Could not plan that write — ${prepared.error}`,
+      });
+      return;
+    }
+
+    const plan = prepared.plan;
+    const mapping = Object.entries(plan.mappings).map(([from, to]) => `\`${from}\` → \`${to}\``).join(', ');
+    const sample = plan.sample.slice(0, 3).map((row) => `• ${SlackRenderer.escape(JSON.stringify(row).slice(0, 180))}`).join('\n');
+
+    await ctx.client.chat.postMessage({
+      channel: ctx.channel, thread_ts: ctx.threadTs,
+      text: `Approval needed: write ${plan.recordCount} record(s) to ${plan.destination}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Approval needed — this writes to an external system.*\n`
+              + `*${plan.recordCount}* record(s) from \`${plan.sourceTable}\` → *${plan.destination}*\n`
+              + `Mapping: ${mapping}`
+              + (intent.reason ? `\nReason: ${SlackRenderer.escape(intent.reason)}` : ''),
+          },
+        },
+        ...(sample ? [{ type: 'section', text: { type: 'mrkdwn', text: `Sample:\n${sample}` } }] : []),
+        {
+          type: 'actions',
+          block_id: `brain_reverse:${plan.planId}`,
+          elements: [
+            { type: 'button', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, action_id: 'brain_reverse_approve', value: plan.planId },
+            { type: 'button', style: 'danger', text: { type: 'plain_text', text: 'Reject' }, action_id: 'brain_reverse_reject', value: plan.planId },
+          ],
+        },
+        {
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: `plan \`${plan.planId}\`${plan.expiresAt ? ` · expires ${plan.expiresAt}` : ''} · nothing is written until someone approves` }],
+        },
+      ] as never,
+    });
   }
 
   async start(): Promise<void> {

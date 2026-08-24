@@ -68,18 +68,39 @@ stream has never been synced. Work through it in order.
    connecting. Adding a data source needs credentials and is a human decision — do not
    attempt it, and never fetch the answer from the internet instead.
 
-## Writes are never yours to make
+## Writes are never yours to make — propose them
 
-Anything that changes an external system — `pm reverse run`, any create/update/delete against
-a connector — is **approval-gated and belongs to a human**. You may plan and preview:
+Anything that changes an external system is approval-gated and belongs to a person. pm
+enforces this: `pm reverse plan --json` deliberately omits the approval token, so you
+cannot approve your own mutation even if you try.
 
-```bash
-cd /pmroot && pm reverse plan …
-cd /pmroot && pm reverse preview …
+Do not run `pm reverse run`. Instead **propose** the write by writing
+`/workspace/requests/reverse.json`:
+
+```json
+{
+  "sourceTable": "gh_issues",
+  "destination": "outbox:ob",
+  "map": { "title": "title", "html_url": "url" },
+  "reason": "asked to copy open issues into the outbox"
+}
 ```
 
-Show the person the preview and ask them to approve. Never run `pm reverse run`, and never
-pass an approval token yourself.
+`destination` is `connector:credential` — check `pm credentials list --json` for what exists,
+and `pm connectors inspect <connector> --json` for the write actions and field names it
+accepts. Get the field names right: a mapping that does not match the destination's schema
+fails the plan.
+
+The host then plans it, posts a preview to this thread with the record count, the mapping and
+a sample, and waits for a human to press **Approve**. Tell the person that is what you have
+done, and what the write would do. Do not claim it has happened.
+
+You may freely inspect and dry-run to build a correct proposal:
+
+```bash
+cd /pmroot && pm reverse list --json
+cd /pmroot && pm reverse preview <plan-id> --json
+```
 
 ## How to answer
 
