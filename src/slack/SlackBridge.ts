@@ -283,6 +283,17 @@ export class SlackBridge {
   }
 
   async start(): Promise<void> {
+    // Build the image BEFORE opening the socket. SandboxRunner.start() is synchronous
+    // and Node is single-threaded, so a cold first turn would run `docker build` on the
+    // event loop for minutes — long enough that socket-mode's ping/pong timers stop
+    // firing and the websocket is torn down and reconnected, losing in-flight events.
+    // Paying for it up front costs nothing at rest and removes the worst-case stall.
+    this.runner.assertDocker();
+    if (!this.runner.imageExists()) {
+      this.log.step('Sandbox image missing — building it before connecting');
+      this.runner.buildImage();
+    }
+
     await this.app.start();
     this.startReaper();
     this.log.ok('Slack bridge connected (Socket Mode)');
