@@ -27,7 +27,12 @@ No bespoke agent runtime, no embedding index, no application server. That is the
 
 **What actually works today**
 
-- `pm` built from source; GitHub connector syncing real issues into a Parquet warehouse
+- **557 connectors ship built in.** GitHub is wired end to end in the demo — real issues syncing
+  into a Parquet warehouse. I probed the others rather than taking the catalogue on trust:
+  Slack, Notion, Linear, Gmail and Stripe all reach their real APIs and stop only at
+  authentication (the Slack call actually hit `conversations.list` and came back `not_auth`;
+  Linear hit its GraphQL endpoint). Adding one is a config entry, not new code. A minority are
+  declared but not yet routable, so I'd verify each before promising it.
 - The agent answers from that warehouse *and* from local SOPs, citing its source every time —
   a table path, or a file with line numbers, or the issue's URL
 - One command bootstraps it: `bun run brain setup`, then `bun run brain ask "..."`
@@ -48,6 +53,8 @@ large thing that doesn't.
    human-in-the-loop; the brain should work the same way. That's the piece that gets knowledge out
    of people's heads instead of just indexing what's already written down.
 2. **Slack as the surface**, since that's where the questions actually get asked — and as a source.
+   The agent runtime has no UI of its own, so this is a thin bridge: Slack threads map onto agent
+   sessions, and approvals become buttons. No public URL needed (Socket Mode).
 3. Permissions from the source systems, then embeddings once the corpus outgrows grep.
 
 Happy to walk through it live, or to point it at a real source of yours and show it answering
