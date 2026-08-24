@@ -132,6 +132,26 @@ export class SandboxRunner {
     return name;
   }
 
+  /**
+   * Reads a file out of a running sandbox. Used by the skill probe to inspect the
+   * session transcript, which is the only record of which skills the agent consulted.
+   */
+  readFile(container: string, path: string): string {
+    const out = spawnSync(this.docker, ['exec', container, 'cat', path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return out.status === 0 ? out.stdout : '';
+  }
+
+  /** Runs a command inside a running sandbox. */
+  exec(container: string, argv: string[]): void {
+    spawnSync(this.docker, ['exec', container, ...argv], { stdio: 'ignore' });
+  }
+
+  /** Lists files under a directory inside a running sandbox. */
+  listFiles(container: string, dir: string): string[] {
+    const out = spawnSync(this.docker, ['exec', container, 'find', dir, '-type', 'f', '-name', '*.jsonl'], { encoding: 'utf8' });
+    return out.status === 0 ? out.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  }
+
   stop(workspace: string): void {
     spawnSync(this.docker, ['rm', '-f', this.containerName(workspace)], { stdio: 'ignore' });
     this.log.ok(`sandbox ${this.containerName(workspace)} removed (volume kept)`);

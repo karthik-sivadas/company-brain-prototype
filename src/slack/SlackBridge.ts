@@ -258,6 +258,11 @@ export class SlackBridge {
       this.router.recordTurn(record.threadKey);
       await react(WORKING, true);
       await react(DONE);
+
+      // The agent cannot sync (no pm in the sandbox, /warehouse is read-only, no
+      // credentials). If it decided data was missing but extractable, it left a request
+      // on the shared volume; run it here, on the host, and report back in-thread.
+      await this.runPendingSyncRequest(ctx, record.sandbox);
     } catch (error) {
       const rendered = this.renderer.error((error as Error).message);
       await ctx.client.chat.postMessage({
@@ -280,6 +285,54 @@ export class SlackBridge {
         this.log.info(`reaped idle sandbox ${record.sandbox} (volume kept)`);
       }
     }, 60_000);
+  }
+
+  /**
+   * Executes a sync the agent requested during its turn, and says so in the thread.
+   *
+   * Reported rather than silent: a first extraction takes real time, and a user who is
+   * told "I have requested it" needs to see it land.
+   */
+  private async runPendingSyncRequest(
+    ctx: { client: App['client']; channel: string; threadTs: string },
+    container: string,
+  ): Promise<void> {
+    const REQUEST = '/workspace/requests/sync.json';
+    const raw = this.runner.readFile(container, REQUEST).trim();
+    if (!raw) return;
+    this.runner.exec(container, ['rm', '-f', REQUEST]); // one request per turn, never replayed
+
+    let request: { connector?: string; connection?: string; streams?: string[]; reason?: string };
+    try { request = JSON.parse(raw); }
+    catch { this.log.warn(`ignored an unparseable sync request: ${raw.slice(0, 120)}`); return; }
+
+    const streams = (request.streams ?? []).join(', ') || 'the requested data';
+    await ctx.client.chat.postMessage({
+      channel: ctx.channel, thread_ts: ctx.threadTs,
+      text: `:hourglass_flowing_sand: Extracting ${streams} — this usually takes a minute. I will post here when it lands.`,
+    });
+
+    try {
+      const { PmBinary } = await import('../core/PmBinary.ts');
+      const { PmProject } = await import('../core/PmProject.ts');
+      const { SyncRequestRunner } = await import('../core/SyncRequest.ts');
+      const pm = new PmBinary(this.workspace, this.log);
+      const project = new PmProject(pm, this.workspace, this.log);
+      const outcome = new SyncRequestRunner(this.workspace, pm, project, this.log).run(request);
+
+      await ctx.client.chat.postMessage({
+        channel: ctx.channel, thread_ts: ctx.threadTs,
+        text: outcome.ok
+          ? `:white_check_mark: ${outcome.message}. Ask again and I will use it.`
+          : `:x: Could not extract it — ${outcome.message}`,
+      });
+    } catch (error) {
+      this.log.fail(`sync request failed: ${(error as Error).message}`);
+      await ctx.client.chat.postMessage({
+        channel: ctx.channel, thread_ts: ctx.threadTs,
+        text: `:x: The extraction failed: ${(error as Error).message}`,
+      });
+    }
   }
 
   async start(): Promise<void> {

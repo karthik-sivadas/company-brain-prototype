@@ -4,10 +4,21 @@
     "ref": "main"
   },
   "activeSkills": [
-    "pm-shared", "pm-connectors", "pm-etl", "pm-warehouse", "pm-file",
-    "pm-github", "pm-slack", "pm-notion", "pm-linear",
-    "pm-outbox", "pm-reverse-etl", "pm-sample", "pm-runtime",
-    "recipe-github-prs-to-warehouse", "recipe-preview-approve-reverse-etl"
+    "pm-shared",
+    "pm-connectors",
+    "pm-etl",
+    "pm-warehouse",
+    "pm-file",
+    "pm-github",
+    "pm-slack",
+    "pm-notion",
+    "pm-linear",
+    "pm-outbox",
+    "pm-reverse-etl",
+    "pm-sample",
+    "pm-runtime",
+    "recipe-github-prs-to-warehouse",
+    "recipe-preview-approve-reverse-etl"
   ],
   "connectors": [
     {
@@ -21,7 +32,18 @@
         "max_pages": "1"
       },
       "streams": [
-        { "name": "issues", "primaryKey": "node_id", "cursor": "updated_at", "table": "gh_issues" }
+        {
+          "name": "issues",
+          "primaryKey": "node_id",
+          "cursor": "updated_at",
+          "table": "gh_issues"
+        },
+        {
+          "name": "pull_requests",
+          "primaryKey": "node_id",
+          "cursor": "updated_at",
+          "table": "github_pull_requests"
+        }
       ]
     }
   ]

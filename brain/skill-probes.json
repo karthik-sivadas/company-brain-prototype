@@ -1,0 +1,27 @@
+[
+  {
+    "question": "How many issues does the repo have?",
+    "expect": ["brain-search"],
+    "reject": ["pm-github"],
+    "answerContains": ["46"]
+  },
+  {
+    "question": "What GitHub issues were updated most recently? Give me the three newest with their URLs.",
+    "expect": ["brain-search"],
+    "answerContains": ["github.com"]
+  },
+  {
+    "question": "What tables are in the warehouse and how many rows does each have?",
+    "expect": ["brain-search"],
+    "answerContains": ["gh_issues"]
+  },
+  {
+    "question": "How do I add a new data source to the Company Brain?",
+    "expect": ["brain-setup"]
+  },
+  {
+    "question": "What is our policy on refunds?",
+    "expect": ["brain-search"],
+    "answerContains": ["not"]
+  }
+]

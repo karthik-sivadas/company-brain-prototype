@@ -78,16 +78,43 @@ async function main(): Promise<number> {
 
       log.step('Search skill');
       skills.writeSearchSkill(project.listTables());
+      await writeDataState(workspace, pm, log, project.listTables());
 
       log.ok('setup complete — next: bun run brain sync');
       return 0;
     }
 
     case 'skills': {
+      if (rest[0] === 'probe') {
+        // Skill routing is decided entirely by descriptions in omp's system prompt and
+        // nothing validates them, so it is measured rather than assumed. See SkillProbe.ts.
+        const { SkillProbeRunner } = await import('./core/SkillProbe.ts');
+        const { readFileSync } = await import('node:fs');
+        const { join: joinPath } = await import('node:path');
+        const path = rest[1] ?? joinPath(workspace.brainDir, 'skill-probes.json');
+        const probes = JSON.parse(readFileSync(path, 'utf8')) as Array<Record<string, unknown>>;
+        log.step(`Skill routing — ${probes.length} probes`);
+        const results = await new SkillProbeRunner(workspace, log).run(probes as never);
+
+        for (const r of results) {
+          const detail: string[] = [];
+          if (r.missing.length) detail.push(`did not consult ${r.missing.join(', ')}`);
+          if (r.forbidden.length) detail.push(`wrongly consulted ${r.forbidden.join(', ')}`);
+          if (r.missingText.length) detail.push(`answer missing ${r.missingText.join(', ')}`);
+          const line = `${r.question}  [${r.consulted.join(', ') || 'no skill consulted'}] ${Math.round(r.elapsedMs / 1000)}s`;
+          if (r.passed) log.ok(line);
+          else { log.fail(line); for (const d of detail) log.info(`  ${d}`); log.info(`  answered: ${r.answer.slice(0, 160)}`); }
+        }
+        const failed = results.filter((r) => !r.passed).length;
+        log.info(`${results.length - failed}/${results.length} probes passed`);
+        return failed === 0 ? 0 : 1;
+      }
+
       const config = workspace.loadConfig();
       log.step('Skills');
       skills.install(config.activeSkills);
       skills.writeSearchSkill(project.listTables());
+      await writeDataState(workspace, pm, log, project.listTables());
       return 0;
     }
 
@@ -113,6 +140,7 @@ async function main(): Promise<number> {
 
       log.step('Refreshing search skill');
       skills.writeSearchSkill(project.listTables());
+      await writeDataState(workspace, pm, log, project.listTables());
       return failures === 0 ? 0 : 1;
     }
 
@@ -322,3 +350,15 @@ main()
     console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   });
+
+/** Keeps /brain/DATA-STATE.md in step with what has actually been extracted. */
+async function writeDataState(
+  workspace: import('./core/Workspace.ts').Workspace,
+  pm: import('./core/PmBinary.ts').PmBinary,
+  log: import('./core/Logger.ts').Logger,
+  tables: string[],
+): Promise<void> {
+  const { DataState } = await import('./core/DataState.ts');
+  try { new DataState(workspace, pm, log).write(tables); }
+  catch (error) { log.warn(`could not write DATA-STATE.md: ${(error as Error).message}`); }
+}
