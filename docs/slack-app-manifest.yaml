@@ -1,0 +1,41 @@
+# Company Brain — Slack app manifest
+# Create the app from this at https://api.slack.com/apps → Create New App → From an app manifest
+display_information:
+  name: Company Brain
+  description: Ask your company's knowledge. Answers come back in-thread, with sources.
+  background_color: "#1f2d3d"
+features:
+  bot_user:
+    display_name: Company Brain
+    always_online: true
+  slash_commands:
+    - command: /brain
+      description: Ask the Company Brain a question
+      usage_hint: "what changed in the repo this week?"
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read      # @mentions start a new thread
+      - chat:write             # post answers
+      - channels:history       # follow-ups in public channels (no @mention needed)
+      - channels:read          # resolve channel names
+      - groups:history         # follow-ups in private channels
+      - im:history             # DMs
+      - im:write               # reply in DMs
+      - reactions:write        # hourglass -> check/cross progress
+      - files:write            # attach answers that exceed Slack's block limits
+      - users:read             # map Slack users to people
+      - commands               # /brain
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+  interactivity:
+    is_enabled: true           # required for the feedback buttons
+  socket_mode_enabled: true    # no public URL required
+  org_deploy_enabled: false
+  token_rotation_enabled: false
