@@ -1,0 +1,15 @@
+{
+  "name": "company-brain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Company Brain — pm extracts, OMP reasons, skills live in a folder.",
+  "scripts": {
+    "brain": "bun run src/cli.ts",
+    "doctor": "bun run src/cli.ts doctor",
+    "setup": "bun run src/cli.ts setup",
+    "sync": "bun run src/cli.ts sync",
+    "ask": "bun run src/cli.ts ask"
+  },
+  "engines": { "bun": ">=1.1" }
+}

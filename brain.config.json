@@ -1,0 +1,28 @@
+{
+  "pm": {
+    "repo": "https://github.com/polymetrics-ai/cli.git",
+    "ref": "main"
+  },
+  "activeSkills": [
+    "pm-shared", "pm-connectors", "pm-etl", "pm-warehouse", "pm-file",
+    "pm-github", "pm-slack", "pm-notion", "pm-linear",
+    "pm-outbox", "pm-reverse-etl", "pm-sample", "pm-runtime",
+    "recipe-github-prs-to-warehouse", "recipe-preview-approve-reverse-etl"
+  ],
+  "connectors": [
+    {
+      "connector": "github",
+      "credential": "gh",
+      "config": {
+        "owner": "polymetrics-ai",
+        "repo": "cli",
+        "auth_type": "public",
+        "rate_limit_ip": "127.0.0.1",
+        "max_pages": "1"
+      },
+      "streams": [
+        { "name": "issues", "primaryKey": "node_id", "cursor": "updated_at", "table": "gh_issues" }
+      ]
+    }
+  ]
+}
