@@ -25,7 +25,6 @@ export const OPTIONAL_BOT_SCOPES: Record<string, string> = {
   'groups:read': 'list private channels (doctor uses this)',
   'im:write': 'open a DM conversation',
   'users:read': 'map Slack users to people (identity, not built yet)',
-  commands: '/brain slash command (S5, not built yet)',
   'assistant:write': 'native streaming via sayStream (S6, optional)',
 };
 

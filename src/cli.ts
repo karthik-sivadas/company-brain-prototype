@@ -242,6 +242,18 @@ async function main(): Promise<number> {
         return 0;
       }
 
+      if (sub === 'forget') {
+        const key = rest[1];
+        const router = new ThreadRouter(workspace);
+        if (!key) {
+          log.fail('usage: bun run brain slack forget <threadKey>  (see `slack threads`)');
+          return 1;
+        }
+        if (router.forget(key)) { log.ok(`forgot ${key} — unmentioned replies there are ignored again`); return 0; }
+        log.fail(`no such thread: ${key}`);
+        return 1;
+      }
+
       if (sub === 'start') {
         // @slack/socket-mode opens its websocket with undici's WebSocket and detects
         // pongs through the `undici:websocket:pong` diagnostics channel. Bun resolves
@@ -259,6 +271,20 @@ async function main(): Promise<number> {
           return 1;
         }
         log.step('Slack bridge');
+
+        // Validate before opening the socket. Bolt surfaces a bad bot token as an
+        // unhandled rejection on the first API call, long after "connected" is printed.
+        const { checkBotToken } = await import('./slack/SlackPreflight.ts');
+        const preflight = await checkBotToken(botToken);
+        if (!preflight.ok) {
+          log.fail(`the bot token was rejected by Slack — ${preflight.error}`);
+          return 1;
+        }
+        if (preflight.missingRequired.length > 0) {
+          log.fail(`missing required scopes: ${preflight.missingRequired.join(', ')} — reinstall the app`);
+          return 1;
+        }
+
         const channels = (process.env.SLACK_CHANNELS ?? '').split(',').map((c) => c.trim()).filter(Boolean);
         const bridge = new SlackBridge(workspace, log, {
           botToken, appToken, channels,

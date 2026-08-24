@@ -14,6 +14,16 @@ export interface ThreadRecord {
   createdAt: string;
   lastTurnAt: string;
   turns: number;
+  /**
+   * True when unmentioned replies in this thread are meant for the bot.
+   *
+   * Set when the conversation *starts* with the bot — an @mention on a top-level
+   * message, or a DM. An @mention posted as a reply inside a pre-existing human
+   * thread answers that one message but does NOT adopt the thread, otherwise the
+   * bot would answer every subsequent human reply in a conversation that was
+   * never addressed to it.
+   */
+  adopted: boolean;
 }
 
 /**
@@ -58,20 +68,40 @@ export class ThreadRouter {
     renameSync(tmp, this.path); // atomic: a crash mid-write must not truncate the registry
   }
 
-  /** True when this thread has been seen before — i.e. the message is a follow-up. */
+  /**
+   * True when an unmentioned message in this thread should be treated as a follow-up.
+   *
+   * Deliberately false for threads the bot was merely mentioned in — see `adopted`.
+   * Records written before `adopted` existed are treated as adopted, which matches
+   * how they behaved when they were created.
+   */
   isKnownThread(team: string, channel: string, threadTs: string): boolean {
-    return this.records.has(ThreadRouter.key(team, channel, threadTs));
+    const record = this.records.get(ThreadRouter.key(team, channel, threadTs));
+    return record !== undefined && record.adopted !== false;
   }
 
   get(team: string, channel: string, threadTs: string): ThreadRecord | undefined {
     return this.records.get(ThreadRouter.key(team, channel, threadTs));
   }
 
-  /** Returns the existing record, or creates one. `isFollowUp` decides whether to pass `--continue`. */
-  resolve(team: string, channel: string, threadTs: string): { record: ThreadRecord; isFollowUp: boolean } {
+  /**
+   * Returns the existing record, or creates one. `isFollowUp` decides whether to pass `--continue`.
+   *
+   * `adopt` only ever upgrades: a thread that was adopted stays adopted, so a later
+   * in-thread mention cannot silently un-own a conversation the bot started.
+   */
+  resolve(
+    team: string,
+    channel: string,
+    threadTs: string,
+    adopt = true,
+  ): { record: ThreadRecord; isFollowUp: boolean } {
     const key = ThreadRouter.key(team, channel, threadTs);
     const existing = this.records.get(key);
-    if (existing) return { record: existing, isFollowUp: existing.turns > 0 };
+    if (existing) {
+      if (adopt && existing.adopted === false) { existing.adopted = true; this.persist(); }
+      return { record: existing, isFollowUp: existing.turns > 0 };
+    }
 
     const slug = `${ThreadRouter.sanitise(team)}-${ThreadRouter.sanitise(channel)}-${ThreadRouter.sanitise(threadTs)}`;
     const now = new Date().toISOString();
@@ -80,7 +110,7 @@ export class ThreadRouter {
       sandbox: `brain-thread-${slug}`.toLowerCase(),
       volume: `brain-ws-thread-${slug}`.toLowerCase(),
       sessionDir: `/workspace/sessions/${ThreadRouter.sanitise(threadTs)}`,
-      createdAt: now, lastTurnAt: now, turns: 0,
+      createdAt: now, lastTurnAt: now, turns: 0, adopted: adopt,
     };
     this.records.set(key, record);
     this.persist();
@@ -99,6 +129,13 @@ export class ThreadRouter {
   idleSince(minutes: number): ThreadRecord[] {
     const cutoff = Date.now() - minutes * 60_000;
     return [...this.records.values()].filter((r) => Date.parse(r.lastTurnAt) < cutoff);
+  }
+
+  /** Drops a thread from the registry so unmentioned replies in it are ignored again. */
+  forget(threadKey: string): boolean {
+    if (!this.records.delete(threadKey)) return false;
+    this.persist();
+    return true;
   }
 
   all(): ThreadRecord[] { return [...this.records.values()]; }

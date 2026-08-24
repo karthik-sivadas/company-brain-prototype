@@ -8,11 +8,6 @@ features:
   bot_user:
     display_name: Company Brain
     always_online: true
-  slash_commands:
-    - command: /brain
-      description: Ask the Company Brain a question
-      usage_hint: "what changed in the repo this week?"
-      should_escape: false
 oauth_config:
   scopes:
     bot:
@@ -27,7 +22,6 @@ oauth_config:
       - reactions:write        # hourglass -> check/cross progress
       - files:write            # attach answers that exceed Slack's block limits
       - users:read             # map Slack users to people
-      - commands               # /brain
 settings:
   event_subscriptions:
     bot_events:

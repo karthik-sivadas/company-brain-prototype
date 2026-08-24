@@ -17,8 +17,21 @@ export interface RenderedAnswer {
  * as a file rather than silently truncated.
  */
 export class SlackRenderer {
+  /**
+   * Slack treats `<…>` as control sequences, so agent output must be escaped before any
+   * rewrite. Unescaped, an answer that merely quotes `<@U123>` or `<!channel>` posts a
+   * live mention — and a quoted mention of the bot itself is not filtered anywhere,
+   * because our own posts are excluded by bot_id, not by text.
+   *
+   * Escaping runs first; the link rewrite below re-emits genuine `<…>` afterwards.
+   * https://docs.slack.dev/messaging/formatting-message-text
+   */
+  static escape(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   static toMrkdwn(markdown: string): string {
-    return markdown
+    return SlackRenderer.escape(markdown)
       .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')          // headings → bold
       .replace(/\*\*(.+?)\*\*/g, '*$1*')             // bold
       .replace(/(^|[\s(])_(?!_)(.+?)_(?=[\s).,!?]|$)/g, '$1_$2_') // italics pass through
@@ -78,7 +91,7 @@ export class SlackRenderer {
 
     return {
       blocks,
-      fallbackText: answer.slice(0, 500) || 'Company Brain answered',
+      fallbackText: SlackRenderer.escape(answer.slice(0, 500)) || 'Company Brain answered',
       overflow: tooLong ? answer : undefined,
     };
   }
@@ -86,7 +99,7 @@ export class SlackRenderer {
   error(message: string): RenderedAnswer {
     return {
       blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `:warning: ${SlackRenderer.toMrkdwn(message)}` } }],
-      fallbackText: message.slice(0, 300),
+      fallbackText: SlackRenderer.escape(message.slice(0, 300)),
     };
   }
 }
