@@ -243,6 +243,17 @@ async function main(): Promise<number> {
       }
 
       if (sub === 'start') {
+        // @slack/socket-mode opens its websocket with undici's WebSocket and detects
+        // pongs through the `undici:websocket:pong` diagnostics channel. Bun resolves
+        // `undici` to a built-in shim with no WebSocket at all, and its native
+        // WebSocket never publishes to that channel — so under Bun the bridge either
+        // fails to construct or silently reconnect-loops once the heartbeat starts.
+        // Bolt v5 supports Node >= 20; run the bridge there.
+        if (typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined') {
+          log.fail('the Slack bridge cannot run under Bun — @slack/socket-mode needs real undici');
+          log.info('run it on Node instead:  npm run slack:start');
+          return 1;
+        }
         if (!botToken || !appToken) {
           log.fail('SLACK_BOT_TOKEN and SLACK_APP_TOKEN are required — see `brain slack doctor`');
           return 1;

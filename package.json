@@ -3,15 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Company Brain — pm extracts, OMP reasons, skills live in a folder.",
+  "description": "Company Brain \u2014 pm extracts, OMP reasons, skills live in a folder.",
   "scripts": {
     "brain": "bun run src/cli.ts",
     "doctor": "bun run src/cli.ts doctor",
     "setup": "bun run src/cli.ts setup",
     "sync": "bun run src/cli.ts sync",
-    "ask": "bun run src/cli.ts ask"
+    "ask": "bun run src/cli.ts ask",
+    "slack": "./scripts/slack.sh",
+    "slack:doctor": "./scripts/slack.sh doctor",
+    "slack:start": "./scripts/slack.sh start"
   },
-  "engines": { "bun": ">=1.1" },
+  "engines": {
+    "bun": ">=1.1",
+    "node": ">=22"
+  },
   "dependencies": {
     "@slack/bolt": "^5.0.0"
   }
