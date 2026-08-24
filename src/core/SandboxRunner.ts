@@ -151,7 +151,16 @@ export class SandboxRunner {
   ): Promise<TurnResult> {
     const name = this.start(options);
     const sessionDir = options.sessionDir ?? '/workspace/sessions';
-    const args = ['exec', '-i', '-w', '/workspace', name, 'omp', '--mode', 'rpc', '--session-dir', sessionDir];
+    // omp's default system prompt is a coding-assistant prompt, which sent the agent
+    // looking for .git/config and package.json and pulled it into omp's live `issue://`
+    // GitHub resource — none of which exist in a sealed, networkless container. The brief
+    // states the actual environment and points at the warehouse.
+    const args = [
+      'exec', '-i', '-w', '/workspace', name,
+      'omp', '--mode', 'rpc',
+      '--session-dir', sessionDir,
+      '--append-system-prompt', '/brain/AGENT-BRIEF.md',
+    ];
     if (options.continueSession) args.push('--continue');
     const child = spawn(this.docker, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
