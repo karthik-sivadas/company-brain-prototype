@@ -14,9 +14,25 @@ Built by composing two tools instead of writing a platform:
 
 There is no bespoke agent runtime, no vector database and no application server.
 
+## Prerequisites
+
+| Tool | Version | Needed for |
+|---|---|---|
+| **Bun** | ≥ 1.1 | everything except the Slack bridge |
+| **Node** | ≥ 22.7, < 26 | the Slack bridge only (`--experimental-transform-types` landed in 22.7 and was removed in 26) |
+| **Go** + a C compiler | 1.25+ | the one-time pm build. CGO is required — the DuckDB driver will not link without it |
+| **Docker** | daemon running | sandboxes and Slack. colima works |
+| **duckdb** | any | host-side `ask` (the sandbox ships its own) |
+| **omp** | latest | the agent runtime — **and it must be signed in to a model provider**, or every answer fails with "No models available" |
+
+`bun run brain doctor` checks the first-party ones. It does **not** check that omp is signed
+in, which is the most common silent failure.
+
 ## Quick start
 
 ```bash
+bun install               # the README used to omit this
+
 bun run brain doctor      # check prerequisites
 bun run brain setup       # build pm, init the project, install skills, create connections
 bun run brain sync        # extract into the warehouse
@@ -58,6 +74,14 @@ so only an allow-list (`activeSkills` in `brain.config.json`) stays in `brain/sk
 parked. That is what `bun run brain skills` does.
 
 ## Adding a data source
+
+**Full guide: [docs/CONNECTORS.md](docs/CONNECTORS.md)** — how to pick a connector, read its
+real primary key and cursor out of pm's manifest (guessing them creates a permanently broken
+connection), supply credentials from `.env`, and verify the agent can see the result.
+
+Once a connector is configured you rarely need to add streams by hand — ask the brain and it
+extracts them itself.
+
 
 Add an entry to `brain.config.json` and re-run setup:
 
@@ -118,9 +142,13 @@ The container runs non-root (uid 10001) with a read-only root filesystem, `--cap
 ## Slack
 
 ```bash
-bun run brain slack doctor     # token + docker + image checks
-bun run brain slack start      # Socket Mode bridge (no public URL needed)
-bun run brain slack threads    # known threads and their sandboxes
+npm run slack:doctor           # tokens verified against Slack, scopes, channel membership
+npm run slack:start            # Socket Mode bridge (no public URL needed)
+./scripts/slack.sh threads     # known threads and their sandboxes
+
+# The bridge runs on NODE, not Bun: @slack/socket-mode needs real undici's WebSocket and
+# its pong diagnostics channel, neither of which Bun's undici shim provides. scripts/slack.sh
+# picks a suitable Node (>=22.7, <26) even if an older one is first on PATH.
 ```
 
 Ask in a channel (`@Company Brain …`) or DM. The answer returns in-thread with a ⏳ → ✅ reaction,
@@ -153,7 +181,7 @@ Environment: `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, optional `SLACK_CHANNELS` (al
 | `bun run brain tables` | list queryable Parquet tables |
 | `bun run brain ask "…"` | ask a question on the host |
 | `bun run brain sandbox build\|ask\|stop` | run the agent in a container, one volume per workspace |
-| `bun run brain slack doctor\|start\|threads` | Slack bridge (Socket Mode), one sandbox per thread |
+| `npm run slack:doctor\|slack:start` | Slack bridge (Socket Mode), one sandbox per thread — runs on Node |
 
 ## Notes
 

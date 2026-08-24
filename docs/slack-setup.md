@@ -1,5 +1,10 @@
 # Testing the Slack bridge
 
+> **Prerequisites:** Node >= 22.7 and < 26 (the bridge only — everything else runs on Bun),
+> Docker running, and `omp` signed in to a model provider. Copy `.env.example` to `.env`;
+> `scripts/slack.sh` passes `--env-file=.env` to Node, so exported shell variables are not enough.
+
+
 Roughly 10 minutes, entirely free. Socket Mode means no public URL, no tunnel, no deployment.
 
 ## 1. Create a workspace (1 min)
@@ -41,8 +46,8 @@ SLACK_APP_TOKEN=xapp-...
 ENV
 
 set -a && source .env && set +a
-bun run brain slack doctor      # both tokens ✓, docker ✓, image ✓
-bun run brain slack start       # stays in the foreground
+npm run slack:doctor            # both tokens verified against Slack, scopes, membership
+npm run slack:start             # stays in the foreground
 ```
 
 ## 6. Test it
@@ -61,7 +66,7 @@ In `#brain-test`:
 While it runs, check the sandboxes:
 
 ```bash
-bun run brain slack threads             # thread → sandbox → turn count
+./scripts/slack.sh threads              # thread → sandbox → turn count
 docker ps --filter name=brain-thread    # one container per active thread
 docker volume ls --filter name=brain-ws-thread
 ```
