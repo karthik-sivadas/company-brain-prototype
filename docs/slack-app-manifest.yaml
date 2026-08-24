@@ -21,6 +21,7 @@ oauth_config:
       - channels:history       # follow-ups in public channels (no @mention needed)
       - channels:read          # resolve channel names
       - groups:history         # follow-ups in private channels
+      - groups:read            # list private channels (`slack doctor` membership check)
       - im:history             # DMs
       - im:write               # reply in DMs
       - reactions:write        # hourglass -> check/cross progress

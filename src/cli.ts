@@ -157,19 +157,81 @@ async function main(): Promise<number> {
       const appToken = process.env.SLACK_APP_TOKEN ?? '';
 
       if (sub === 'doctor') {
+        const offline = rest.includes('--offline');
         log.step('Slack prerequisites');
-        const checks: Array<[string, boolean, string]> = [
-          ['SLACK_BOT_TOKEN', botToken.startsWith('xoxb-'), botToken ? 'present' : 'missing (xoxb-…)'],
-          ['SLACK_APP_TOKEN', appToken.startsWith('xapp-'), appToken ? 'present' : 'missing (xapp-…, needs connections:write)'],
+
+        // Shape checks first — they need no network and catch swapped tokens.
+        let healthy = true;
+        const shape: Array<[string, boolean, string]> = [
+          ['SLACK_BOT_TOKEN', botToken.startsWith('xoxb-'), botToken ? 'looks like a bot token' : 'missing (xoxb-…)'],
+          ['SLACK_APP_TOKEN', appToken.startsWith('xapp-'), appToken ? 'looks like an app-level token' : 'missing (xapp-…, needs connections:write)'],
         ];
-        for (const [name, ok, detail] of checks) ok ? log.ok(`${name} — ${detail}`) : log.fail(`${name} — ${detail}`);
+        for (const [name, ok, detail] of shape) {
+          if (ok) log.ok(`${name} — ${detail}`);
+          else { log.fail(`${name} — ${detail}`); healthy = false; }
+        }
+
+        if (!offline && botToken) {
+          const { checkBotToken, checkMembership, checkAppToken, REQUIRED_BOT_SCOPES, OPTIONAL_BOT_SCOPES } =
+            await import('./slack/SlackPreflight.ts');
+
+          log.step('Bot token (live, read-only)');
+          const bot = await checkBotToken(botToken);
+          if (!bot.ok || !bot.identity) {
+            log.fail(`auth.test failed — ${bot.error}`);
+            healthy = false;
+          } else {
+            const id = bot.identity;
+            log.ok(`authenticated as @${id.botUser} in ${id.team} (${id.teamId})`);
+            log.info(`bot_id ${id.botId} · user_id ${id.userId} · ${id.url}`);
+
+            if (bot.missingRequired.length === 0) {
+              log.ok(`all ${Object.keys(REQUIRED_BOT_SCOPES).length} scopes the bridge needs are granted`);
+            } else {
+              healthy = false;
+              for (const scope of bot.missingRequired) log.fail(`missing scope ${scope} — ${REQUIRED_BOT_SCOPES[scope]}`);
+              log.info('add the scope, then reinstall the app — editing the manifest alone does not regrant it');
+            }
+            for (const scope of bot.missingOptional) log.info(`optional scope ${scope} absent — ${OPTIONAL_BOT_SCOPES[scope]}`);
+
+            // A bot in no channel receives no events, which reads as a hang.
+            const channels = await checkMembership(botToken, bot.granted);
+            if ('error' in channels) {
+              log.info(`channel membership unknown — ${channels.error}`);
+            } else {
+              const joined = channels.filter((c) => c.isMember);
+              if (joined.length > 0) {
+                for (const c of joined) log.ok(`in #${c.name} (${c.id})${c.isPrivate ? ' · private' : ''}`);
+              } else {
+                healthy = false;
+                log.fail('the bot is in no channel, so it will receive no events');
+                const sample = channels[0];
+                log.info(`invite it: /invite @${bot.identity.botUser}${sample ? ` in #${sample.name}` : ''}`);
+              }
+            }
+          }
+
+          if (appToken) {
+            log.step('App-level token (Socket Mode handshake)');
+            const app = await checkAppToken(appToken);
+            if (app.ok) log.ok('apps.connections.open succeeded — Socket Mode is enabled and the token is valid');
+            else { log.fail(`apps.connections.open failed — ${app.error}${app.hint ? ` (${app.hint})` : ''}`); healthy = false; }
+          } else {
+            log.warn('no app-level token, so the websocket cannot be opened — `slack start` will not run');
+            log.info('Basic Information → App-Level Tokens → Generate, with scope connections:write');
+          }
+        } else if (offline) {
+          log.info('--offline: skipped the live Slack calls');
+        }
+
+        log.step('Local runtime');
         const sandbox = new SandboxRunner(workspace, log);
         try { sandbox.assertDocker(); log.ok('docker reachable'); }
-        catch (e) { log.fail((e as Error).message); }
+        catch (e) { log.fail((e as Error).message); healthy = false; }
         log.info(sandbox.imageExists() ? 'sandbox image present' : 'sandbox image missing → bun run brain sandbox build');
         const router = new ThreadRouter(workspace);
         log.info(`known threads: ${router.all().length}`);
-        return checks.every(([, ok]) => ok) ? 0 : 1;
+        return healthy ? 0 : 1;
       }
 
       if (sub === 'threads') {
