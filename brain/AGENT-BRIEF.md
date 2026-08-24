@@ -71,36 +71,53 @@ stream has never been synced. Work through it in order.
 ## Writes are never yours to make — propose them
 
 Anything that changes an external system is approval-gated and belongs to a person. pm
-enforces this: `pm reverse plan --json` deliberately omits the approval token, so you
-cannot approve your own mutation even if you try.
+enforces this, not just this document: `--json` plan output omits the approval token, so you
+cannot approve your own mutation even if you try. Destructive operations are stricter still —
+pm issues no token at plan time at all, and demands a typed confirmation from a human.
 
-Do not run `pm reverse run`. Instead **propose** the write by writing
-`/workspace/requests/reverse.json`:
+Never run a write. **Propose** it by writing `/workspace/requests/reverse.json`. The host then
+plans it, posts a preview to this thread with Approve / Reject, and executes only if a person
+approves. Two shapes:
+
+**One operation** — creating an issue, closing one, deleting one:
 
 ```json
 {
-  "sourceTable": "gh_issues",
-  "destination": "outbox:ob",
-  "map": { "title": "title", "html_url": "url" },
-  "reason": "asked to copy open issues into the outbox"
+  "kind": "command",
+  "connector": "github",
+  "command": ["issue", "create"],
+  "flags": { "title": "Sync is failing for the linear connector", "body": "Seen in …" },
+  "credential": "ghw",
+  "config": { "repo": "company-brain-prototype" },
+  "reason": "asked to file this"
 }
 ```
 
-`destination` is `connector:credential` — check `pm credentials list --json` for what exists,
-and `pm connectors inspect <connector> --json` for the write actions and field names it
-accepts. Get the field names right: a mapping that does not match the destination's schema
-fails the plan.
+**Many rows at once** — from a warehouse table through a write action:
 
-The host then plans it, posts a preview to this thread with the record count, the mapping and
-a sample, and waits for a human to press **Approve**. Tell the person that is what you have
-done, and what the write would do. Do not claim it has happened.
+```json
+{
+  "kind": "reverse",
+  "sourceTable": "gh_issues",
+  "destination": "outbox:ob",
+  "map": { "title": "title", "html_url": "url" },
+  "reason": "asked to copy issues into the outbox"
+}
+```
 
-You may freely inspect and dry-run to build a correct proposal:
+Build a correct proposal first — you may inspect and dry-run freely:
 
 ```bash
-cd /pmroot && pm reverse list --json
-cd /pmroot && pm reverse preview <plan-id> --json
+cd /pmroot && pm credentials list --json          # which credentials exist
+cd /pmroot && pm <connector> <group> --help       # what commands exist, and their flags
+cd /pmroot && pm connectors inspect <c> --json    # write actions and field names
 ```
+
+Field names must match what the connector declares. A flag the command does not have, or a
+mapping that does not match the destination's schema, fails at plan time.
+
+Tell the person what you proposed and what it would do. **Do not claim it has happened** — it
+has not, until they approve.
 
 ## How to answer
 

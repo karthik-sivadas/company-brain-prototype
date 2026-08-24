@@ -139,10 +139,10 @@ export class SlackBridge {
       await ack();
       const planId = (action as { value?: string }).value ?? '';
       const who = (body as { user?: { id?: string } }).user?.id ?? 'unknown';
-      const container = (body as { channel?: { id?: string } }).channel?.id ?? '';
+      const channel = (body as { channel?: { id?: string } }).channel?.id ?? '';
       const thread = (body as { message?: { thread_ts?: string; ts?: string } }).message;
       const post = (text: string) => client.chat.postMessage({
-        channel: container, thread_ts: thread?.thread_ts ?? thread?.ts, text,
+        channel, thread_ts: thread?.thread_ts ?? thread?.ts, text,
       });
 
       const allowed = this.config.approvers ?? [];
@@ -151,10 +151,58 @@ export class SlackBridge {
         this.log.warn(`refused an approval from ${who} for ${planId}`);
         return;
       }
-      if (!this.approvals.pending(planId)) { await post(`:warning: <@${who}> that approval is no longer pending.`); return; }
+      const plan = this.approvals.pending(planId);
+      if (!plan) { await post(`:warning: <@${who}> that approval is no longer pending.`); return; }
+
+      // A destructive plan is not approved by a click. pm demands a typed confirmation, and
+      // that typing belongs to the person — so it is collected in a modal rather than
+      // manufactured on their behalf. The plan stays pending until they submit it.
+      if (plan.destructive) {
+        const trigger = (body as { trigger_id?: string }).trigger_id;
+        if (!trigger) { await post(':x: Could not open the confirmation dialog.'); return; }
+        await client.views.open({
+          trigger_id: trigger,
+          view: {
+            type: 'modal',
+            callback_id: 'brain_confirm_destructive',
+            private_metadata: JSON.stringify({ planId, channel, thread: thread?.thread_ts ?? thread?.ts }),
+            title: { type: 'plain_text', text: 'Confirm destructive' },
+            submit: { type: 'plain_text', text: 'Execute' },
+            close: { type: 'plain_text', text: 'Cancel' },
+            blocks: [
+              { type: 'section', text: { type: 'mrkdwn', text: `*${SlackRenderer.escape(plan.summary)}*\nThis cannot be undone.` } },
+              {
+                type: 'input', block_id: 'confirm',
+                label: { type: 'plain_text', text: 'Type destructive to proceed' },
+                element: { type: 'plain_text_input', action_id: 'word', placeholder: { type: 'plain_text', text: 'destructive' } },
+              },
+            ],
+          },
+        } as never);
+        return;
+      }
+
       await post(`:hourglass_flowing_sand: Approved by <@${who}> — writing now.`);
       const result = this.approvals.approve(planId, who);
       await post(result.ok ? `:white_check_mark: ${result.message}.` : `:x: The write failed — ${result.message}`);
+    });
+
+    // The typed confirmation comes back here, from a person, and only then is the token spent.
+    this.app.view('brain_confirm_destructive', async ({ ack, body, view, client }) => {
+      await ack();
+      const who = (body as { user?: { id?: string } }).user?.id ?? 'unknown';
+      let meta: { planId?: string; channel?: string; thread?: string } = {};
+      try { meta = JSON.parse(view.private_metadata || '{}'); } catch { /* fall through */ }
+      const typed = (view.state?.values?.confirm?.word as { value?: string } | undefined)?.value ?? '';
+      const post = (text: string) => client.chat.postMessage({ channel: meta.channel ?? '', thread_ts: meta.thread, text });
+
+      if (typed.trim().toLowerCase() !== 'destructive') {
+        await post(`:no_entry: <@${who}> did not type the confirmation — nothing was executed.`);
+        return;
+      }
+      await post(`:hourglass_flowing_sand: Confirmed by <@${who}> — executing the destructive operation.`);
+      const result = this.approvals.approve(meta.planId ?? '', who, true);
+      await post(result.ok ? `:white_check_mark: ${result.message}.` : `:x: It failed — ${result.message}`);
     });
 
     this.app.action('brain_reverse_reject', async ({ ack, body, action, client }) => {
@@ -409,24 +457,20 @@ export class SlackBridge {
     if (!raw) return;
     this.runner.exec(container, ['rm', '-f', REQUEST]);
 
-    let intent: { sourceTable?: string; destination?: string; map?: Record<string, string>; reason?: string };
-    try { intent = JSON.parse(raw); }
-    catch { this.log.warn(`ignored an unparseable reverse request: ${raw.slice(0, 120)}`); return; }
+    let intent: Record<string, unknown>;
+    try { intent = JSON.parse(raw) as Record<string, unknown>; }
+    catch { this.log.warn(`ignored an unparseable write request: ${raw.slice(0, 120)}`); return; }
 
-    if (!intent.sourceTable || !intent.destination || !intent.map) {
+    const isCommand = intent.kind === 'command';
+    if (!isCommand && (!intent.sourceTable || !intent.destination || !intent.map)) {
       await ctx.client.chat.postMessage({
         channel: ctx.channel, thread_ts: ctx.threadTs,
-        text: ':x: The proposed write was incomplete — it needs sourceTable, destination and map.',
+        text: ':x: The proposed write was incomplete — a bulk write needs sourceTable, destination and map.',
       });
       return;
     }
 
-    const prepared = this.approvals.prepare({
-      sourceTable: intent.sourceTable,
-      destination: intent.destination,
-      map: intent.map,
-      reason: intent.reason,
-    });
+    const prepared = this.approvals.prepare(intent as never);
 
     if (!prepared.ok) {
       await ctx.client.chat.postMessage({
@@ -437,21 +481,28 @@ export class SlackBridge {
     }
 
     const plan = prepared.plan;
-    const mapping = Object.entries(plan.mappings).map(([from, to]) => `\`${from}\` → \`${to}\``).join(', ');
-    const sample = plan.sample.slice(0, 3).map((row) => `• ${SlackRenderer.escape(JSON.stringify(row).slice(0, 180))}`).join('\n');
+    const detailLines = plan.kind === 'command'
+      ? [`*${SlackRenderer.escape(plan.summary)}*`,
+         ...Object.entries(plan.mappings ?? {}).map(([f, v]) => `\`${f}\`: ${SlackRenderer.escape(String(v).slice(0, 300))}`)]
+      : [`*${plan.recordCount}* record(s) from \`${plan.sourceTable}\` → *${plan.destination}*`,
+         `Mapping: ${Object.entries(plan.mappings ?? {}).map(([f, t]) => `\`${f}\` → \`${t}\``).join(', ')}`];
+    const sample = (plan.sample ?? []).slice(0, 3)
+      .map((row) => `• ${SlackRenderer.escape(JSON.stringify(row).slice(0, 180))}`).join('\n');
+    const reason = typeof intent.reason === 'string' ? intent.reason : '';
 
     await ctx.client.chat.postMessage({
       channel: ctx.channel, thread_ts: ctx.threadTs,
-      text: `Approval needed: write ${plan.recordCount} record(s) to ${plan.destination}`,
+      text: `Approval needed: ${plan.summary}`,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Approval needed — this writes to an external system.*\n`
-              + `*${plan.recordCount}* record(s) from \`${plan.sourceTable}\` → *${plan.destination}*\n`
-              + `Mapping: ${mapping}`
-              + (intent.reason ? `\nReason: ${SlackRenderer.escape(intent.reason)}` : ''),
+            text: (plan.destructive
+              ? `:rotating_light: *Approval needed — DESTRUCTIVE. This cannot be undone.*\n`
+              : `*Approval needed — this writes to an external system.*\n`)
+              + detailLines.join('\n')
+              + (reason ? `\nReason: ${SlackRenderer.escape(reason)}` : ''),
           },
         },
         ...(sample ? [{ type: 'section', text: { type: 'mrkdwn', text: `Sample:\n${sample}` } }] : []),
@@ -459,7 +510,9 @@ export class SlackBridge {
           type: 'actions',
           block_id: `brain_reverse:${plan.planId}`,
           elements: [
-            { type: 'button', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, action_id: 'brain_reverse_approve', value: plan.planId },
+            plan.destructive
+              ? { type: 'button', style: 'danger', text: { type: 'plain_text', text: 'Approve — type to confirm' }, action_id: 'brain_reverse_approve', value: plan.planId }
+              : { type: 'button', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, action_id: 'brain_reverse_approve', value: plan.planId },
             { type: 'button', style: 'danger', text: { type: 'plain_text', text: 'Reject' }, action_id: 'brain_reverse_reject', value: plan.planId },
           ],
         },
