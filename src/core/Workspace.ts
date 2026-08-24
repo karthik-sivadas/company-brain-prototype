@@ -1,5 +1,5 @@
 import { mkdirSync, existsSync, symlinkSync, rmSync, lstatSync, readFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface ConnectorSpec {
@@ -73,7 +73,8 @@ export class Workspace {
   linkSkillsForOmp(): void {
     const link = this.ompSkillsLink;
     if (existsSync(link) || this.isBrokenLink(link)) rmSync(link, { recursive: true, force: true });
-    symlinkSync(this.skillsDir, link, 'dir');
+    // relative, so the checkout works on any machine
+    symlinkSync(relative(dirname(link), this.skillsDir), link, 'dir');
   }
 
   private isBrokenLink(path: string): boolean {

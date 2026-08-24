@@ -1,5 +1,0 @@
-version: 1
-project: polymetrics-local
-warehouse:
-  connector: warehouse
-  path: .polymetrics/warehouse

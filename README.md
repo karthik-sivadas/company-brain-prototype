@@ -107,3 +107,16 @@ procedure, and it will check the connector's real schema before answering.
   the rows are committed. Use `"max_pages": "all"` for a complete pull.
 - Public GitHub access needs both `auth_type=public` and `rate_limit_ip`.
 - `omp` blocks on `readPipedInput` unless stdin is closed; the CLI handles this.
+
+## Licence and dependencies
+
+This repository is MIT (see `LICENSE`). It **does not vendor** its dependencies — it builds or
+invokes them as separate programs:
+
+- **`pm`** ([polymetrics-ai/cli](https://github.com/polymetrics-ai/cli)) — AGPL-3.0-only core,
+  with `internal/connectors/defs/**` under MIT. `bun run brain build-pm` compiles it locally into
+  `bin/`, which is gitignored; no AGPL code is redistributed here.
+- **`omp`** ([oh-my-pi](https://github.com/can1357/oh-my-pi)) — MIT, installed separately.
+- **`duckdb`** — MIT, installed separately.
+
+The seed content under `brain/docs/` is synthetic and illustrative.

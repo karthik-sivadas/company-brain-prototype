@@ -5,3 +5,6 @@ data/pm/.polymetrics/logs/
 data/pm/.polymetrics/warehouse/
 brain/.skills-catalog/
 .omp/sessions/
+data/pm/.polymetrics/state/
+data/pm/.polymetrics/config.yaml
+brain/skills/skills.md
