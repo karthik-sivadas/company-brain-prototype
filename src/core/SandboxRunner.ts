@@ -105,8 +105,12 @@ export class SandboxRunner {
 
     if (options.shareCredentials !== false) {
       // Model credentials live in ~/.omp/agent/agent.db. Mounted rw because SQLite needs its
-      // WAL. Replacing this with a scoped token is the authorization work we deferred.
-      args.push('-v', `${join(homedir(), '.omp', 'agent')}:/home/agent/.omp/agent`);
+      // WAL, and nested inside the workspace volume so HOME stays writable under a read-only
+      // rootfs. Replacing this with a scoped token is the authorization work we deferred.
+      // Mounted OUTSIDE the workspace volume and copied in by the entrypoint: a bind nested
+      // inside a volume makes Docker create root-owned parents, which a non-root agent cannot
+      // write to. Copying also keeps the host's credential DB untouched.
+      args.push('-v', `${join(homedir(), '.omp', 'agent')}:/opt/omp-credentials:ro`);
     }
 
     args.push(image, 'sleep', 'infinity');

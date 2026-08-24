@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # duckdb CLI — queries the warehouse Parquet in place
 RUN set -eux; \
     case "${TARGETARCH}" in \
-      arm64) DUCK_ASSET="duckdb_cli-linux-aarch64.zip" ;; \
+      arm64) DUCK_ASSET="duckdb_cli-linux-arm64.zip" ;; \
       amd64) DUCK_ASSET="duckdb_cli-linux-amd64.zip" ;; \
       *) echo "unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
@@ -39,8 +39,10 @@ COPY entrypoint.sh /usr/local/bin/brain-entrypoint
 RUN chmod +x /usr/local/bin/brain-entrypoint
 
 USER 10001
-ENV HOME=/home/agent \
-    PI_INSTALL_DIR=/home/agent/.local/bin
+# HOME lives on the per-workspace volume: the root filesystem is read-only, and omp needs a
+# writable home for its cache and native addons.
+ENV HOME=/workspace/home \
+    PI_INSTALL_DIR=/workspace/home/.local/bin
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/brain-entrypoint"]
 CMD ["sleep", "infinity"]
