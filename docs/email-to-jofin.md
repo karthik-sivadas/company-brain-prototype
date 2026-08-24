@@ -1,64 +1,60 @@
 **To:** jofin@needletailai.com
-**Subject:** Company Brain — working prototype + how I'd build it
+**Subject:** Company Brain — working prototype, and what I'd need to make it yours
 
 Hi Jofin,
 
-Thanks again for the problem. Here's where I landed, and the repo:
+I built the Company Brain prototype. It's live and the code is public:
 https://github.com/karthik-sivadas/company-brain-prototype
 
-**The thing I decided first**
+**What it does today.** You ask a question in Slack. A container spins up for that thread, an
+agent queries a local Parquet warehouse with DuckDB, and answers with a citation to the exact
+file it read. If the data isn't there yet, it says so, extracts it, and then answers. If you
+ask it to change something in an external system, it doesn't — it posts an approval card and
+waits for a person.
 
-Most of a "Company Brain" is a solved problem wearing a new name. The genuinely hard part isn't
-retrieval or chat — it's *sync*: knowing what changed since last time, deduplicating, propagating
-deletions, and keeping a run ledger so the corpus is still true next week. Everything else is
-plumbing on top of that.
+Three things I verified rather than assumed, because the difference matters:
 
-So I didn't build a platform. I composed one:
+- Asked for release counts with nothing synced, it replied *"Releases are not synced. I'm
+  starting the configured GitHub extraction"*, created the connection, ran the sync, and
+  answered: 4 releases, cited.
+- A thread keeps its memory even after its container is destroyed — I killed the container
+  between turns and the conversation continued.
+- End to end against a real GitHub account: created a private repo, created an issue, closed
+  it, deleted it. Every step through an approval gate. Deleting additionally required typing
+  "destructive" — the agent literally cannot approve its own writes, because pm withholds the
+  approval token from machine-readable output.
 
-- **`pm`** (a local-first ETL CLI) does extraction — 557 built-in connectors, incremental
-  cursors, primary-key dedup, tombstones, a run ledger, and approval-gated writes.
-- **`omp`** (an agent runtime) does the reasoning — it already has the tool loop, sessions and
-  skill discovery, so I wrote none of that.
-- **DuckDB** queries pm's Parquet warehouse in place. No import step, no vector database.
-- **The knowledge itself is a folder** of Markdown — skills, SOPs, and answers captured from
-  people. Anyone on your team can edit it without touching code.
+**How it's built — this is the actual argument.** I wrote no agent runtime, no vector
+database, and no application server. `pm` (Polymetrics CLI) owns extraction: cursors,
+deduplication, tombstones, a run ledger, approval-gated writes. `omp` owns the agent loop.
+DuckDB queries Parquet in place. Docker provides isolation. The repo is roughly 3,300 lines of
+glue between them.
 
-No bespoke agent runtime, no embedding index, no application server. That is the whole design.
+That's why it exists at all: **6 hours, 24 commits** — 16:13 to 22:31 in one sitting. Not
+because I write fast, but because almost none of it was written.
 
-**What actually works today**
+**557 connectors** are compiled into the binary — GitHub, Slack, Notion, Linear, Twenty CRM,
+Zendesk, Salesforce, HubSpot, the Zoho family. Adding one is a config entry plus a credential.
+Capabilities vary and I'd check before promising anything: GitHub exposes 606 write actions,
+Twenty 112, HubSpot is read-only.
 
-- **557 connectors ship built in.** GitHub is wired end to end in the demo — real issues syncing
-  into a Parquet warehouse. I probed the others rather than taking the catalogue on trust:
-  Slack, Notion, Linear, Gmail and Stripe all reach their real APIs and stop only at
-  authentication (the Slack call actually hit `conversations.list` and came back `not_auth`;
-  Linear hit its GraphQL endpoint). Adding one is a config entry, not new code. A minority are
-  declared but not yet routable, so I'd verify each before promising it.
-- The agent answers from that warehouse *and* from local SOPs, citing its source every time —
-  a table path, or a file with line numbers, or the issue's URL
-- One command bootstraps it: `bun run brain setup`, then `bun run brain ask "..."`
-- Asked to add Slack as a source, the agent read the project's own setup skill, inspected the
-  installed connector's real schema, and corrected an error in my instructions before answering
+**What I'd need from you**
 
-**What I deliberately left out**
+1. **Which systems hold Needletail's knowledge** — and read-only credentials for two or three
+   of them. That turns a GitHub demo into your actual brain.
+2. **A Slack workspace** to install the app into.
+3. **A model provider key** for the agent.
+4. **A decision on scope:** the prototype assumes one operator. Multiple people means
+   per-user credential scoping — real work, and I'd rather size it with you than guess.
 
-Embeddings, a vector store, permissions sync, and a chat UI. At this corpus size agentic search
-(grep + SQL) is genuinely sufficient, and each of those is a real improvement *later* rather than
-a prerequisite for showing the idea works. I'd rather show you a small thing that runs than a
-large thing that doesn't.
+**What it isn't yet.** One connector is configured, pointed at a public repo. There are no
+company documents in it — it's a GitHub brain today, not a company brain. It runs on my laptop.
+And there's one seam I haven't proven: the agent proposing a write *from a Slack message* and
+someone approving it in-channel. Every half of that works; I haven't watched them work
+together. I'd rather tell you that than let you find it in a demo.
 
-**Where I'd take it next, in order**
-
-1. **The loop that matters for you specifically** — when the brain doesn't know something, it asks
-   a named person, and their answer becomes a citable, owned document. Your ops model is already
-   human-in-the-loop; the brain should work the same way. That's the piece that gets knowledge out
-   of people's heads instead of just indexing what's already written down.
-2. **Slack as the surface**, since that's where the questions actually get asked — and as a source.
-   The agent runtime has no UI of its own, so this is a thin bridge: Slack threads map onto agent
-   sessions, and approvals become buttons. No public URL needed (Socket Mode).
-3. Permissions from the source systems, then embeddings once the corpus outgrows grep.
-
-Happy to walk through it live, or to point it at a real source of yours and show it answering
-from your own data.
+Happy to walk through it live, or to point it at something of yours and show you the same
+thing answering a question that actually matters to you.
 
 Best,
 Karthik
