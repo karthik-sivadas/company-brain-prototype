@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, type Dirent } from 'node:fs';
+import { join, relative, basename } from 'node:path';
 import type { PmBinary } from './PmBinary.ts';
 import type { Workspace, ConnectorSpec, StreamSpec } from './Workspace.ts';
 import type { Logger } from './Logger.ts';
@@ -105,13 +105,30 @@ export class PmProject {
     });
   }
 
-  /** Parquet tables the agent can query, excluding transport staging files. */
+  /**
+   * Parquet tables the agent can query, as paths RELATIVE to the warehouse root.
+   *
+   * Relative, because the same list is baked into a skill that is read both on the
+   * host and inside the sandbox, where the warehouse is mounted at a different
+   * prefix. An absolute host path is a dead link in the container.
+   */
   listTables(): string[] {
-    const glob = new Bun.Glob('**/tables/*.parquet');
+    const root = this.workspace.warehouseDir;
     const found: string[] = [];
-    for (const file of glob.scanSync(this.workspace.warehouseDir)) {
-      if (!file.includes('transport-')) found.push(join(this.workspace.warehouseDir, file));
-    }
-    return found;
+    const walk = (dir: string): void => {
+      let entries: Dirent[];
+      try { entries = readdirSync(dir, { withFileTypes: true }); }
+      catch { return; }
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.parquet') && !entry.name.startsWith('transport-')
+                 && basename(dir) === 'tables') {
+          found.push(relative(root, full));
+        }
+      }
+    };
+    walk(root);
+    return found.sort();
   }
 }

@@ -59,7 +59,15 @@ export class SkillTransport {
     return parked;
   }
 
-  /** Writes a skill that teaches the agent where the warehouse is and how to query it. */
+  /**
+   * Writes the skill that teaches the agent where company knowledge lives.
+   *
+   * Table paths are stored relative to the warehouse root and the roots are resolved
+   * at runtime, because this one file is read from two places: the host (where the
+   * warehouse sits under data/pm/) and the sandbox (where it is mounted at
+   * /warehouse). Baking in a host absolute path made the agent follow a dead link
+   * inside the container and conclude it had no data.
+   */
   writeSearchSkill(tables: string[]): void {
     const dir = join(this.workspace.skillsDir, 'brain-search');
     mkdirSync(dir, { recursive: true });
@@ -69,31 +77,48 @@ export class SkillTransport {
 
     writeFileSync(join(dir, 'SKILL.md'), `---
 name: brain-search
-description: How to search the Company Brain. Use for ANY question about company data, synced records, documents or SOPs. Explains where the data lives and how to query it with DuckDB.
+description: How to search the Company Brain. Use for ANY question about company data, synced records, issues, documents or SOPs. Explains where the data lives and how to query it with DuckDB.
 ---
 
 # brain-search
 
-Data is extracted by \`pm\` into a local warehouse of **Parquet** tables.
+Company knowledge is extracted by \`pm\` into a local warehouse of **Parquet** tables.
+Answer from that warehouse. There is no git checkout here and no network access —
+a question about "GitHub issues" means the synced \`gh_issues\` table, not a repository
+on disk and not the GitHub API.
 
-## Where things live
-- Warehouse tables (query these):
+## Resolve the roots first
+
+This skill is read both on the host and inside the sandbox, where the same data is
+mounted at a different prefix. Resolve the roots instead of assuming either:
+
+\`\`\`bash
+WAREHOUSE=$([ -d /warehouse ] && echo /warehouse || echo data/pm/.polymetrics/warehouse)
+BRAIN=$([ -d /brain ] && echo /brain || echo brain)
+\`\`\`
+
+## Tables available (paths relative to $WAREHOUSE)
 ${tableList}
-- Find any table: \`find data/pm/.polymetrics/warehouse -name '*.parquet' -not -name 'transport-*'\`
-- Documents and SOPs: \`brain/docs/**/*.md\`
-- Answers captured from people: \`brain/memory/facts/*.md\`
+
+Discover any table:
+
+\`\`\`bash
+find "$WAREHOUSE" -name '*.parquet' -not -name 'transport-*'
+\`\`\`
 
 ## How to query
+
 \`\`\`bash
-duckdb -c "DESCRIBE SELECT * FROM read_parquet('<path>');"          # discover columns first
-duckdb -c "SELECT * FROM read_parquet('<path>') LIMIT 5;"
+duckdb -c "DESCRIBE SELECT * FROM read_parquet('$WAREHOUSE/<relative-path>');"
+duckdb -c "SELECT count(*) FROM read_parquet('$WAREHOUSE/<relative-path>');"
 \`\`\`
 
 ## Rules
 1. **Look at the real data before answering.** Never guess a column name — \`DESCRIBE\` first.
-2. **Cite the source**: the table path or the document path, plus \`html_url\` where rows have one.
-3. Search \`brain/docs/\` and \`brain/memory/\` with grep for prose questions.
+2. **Cite the source**: the table path, plus \`html_url\` where rows have one.
+3. Prose questions: \`grep -r "$BRAIN/docs" "$BRAIN/memory"\`.
 4. **If the answer is not in the data, say so** and suggest asking a person. Do not invent it.
+5. **Never report the workspace as empty without running the \`find\` above.**
 `);
     this.log.ok(`brain-search skill points at ${tables.length} table(s)`);
   }
