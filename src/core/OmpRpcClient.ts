@@ -1,4 +1,5 @@
 import type { Readable, Writable } from 'node:stream';
+import { RpcFrameDecoder, parseFrame, OmpRpcProtocolError } from './RpcFrameDecoder.ts';
 
 /** Frames OMP emits. Verified against omp v17.4.0 `--mode rpc` (protocolVersion 1). */
 export type OmpFrame =
@@ -39,6 +40,8 @@ export interface TurnResult {
 export class OmpRpcClient {
   private buffer = '';
   private readonly waiters: Array<(frame: OmpFrame) => boolean> = [];
+  /** Large payloads arrive as base64 `rpc_chunk` sequences; without this they are silently lost. */
+  private readonly decoder = new RpcFrameDecoder();
 
   constructor(
     private readonly stdin: Writable,
@@ -55,9 +58,16 @@ export class OmpRpcClient {
       const line = this.buffer.slice(0, index).trim();
       this.buffer = this.buffer.slice(index + 1);
       if (!line) continue;
-      let frame: OmpFrame;
-      try { frame = JSON.parse(line) as OmpFrame; } catch { continue; } // ignore non-JSON banner lines
-      this.dispatch(frame);
+      let frame: OmpFrame | undefined;
+      try {
+        frame = this.decoder.push(parseFrame(line)) as OmpFrame | undefined;
+      } catch (error) {
+        // Non-JSON banner lines are expected before the handshake; protocol errors are not.
+        if (error instanceof OmpRpcProtocolError && /invalid JSON|without a type|non-object/.test(error.message)) continue;
+        this.dispatch({ type: 'error', message: (error as Error).message } as OmpFrame);
+        continue;
+      }
+      if (frame) this.dispatch(frame);
     }
   }
 
