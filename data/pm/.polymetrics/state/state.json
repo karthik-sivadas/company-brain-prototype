@@ -1,0 +1,245 @@
+{
+  "revision": 18,
+  "sync_mode_compatibility_version": 1,
+  "workspace_id": "ws_01f1f8ae9139d228",
+  "credentials": [
+    {
+      "id": "cred_7041081e734106e8",
+      "name": "wh",
+      "connector": "warehouse",
+      "provider_family": "warehouse",
+      "auth_profile": "default",
+      "config": {
+        "path": ".polymetrics/warehouse"
+      },
+      "created_at": "2026-08-24T10:33:25.457715Z",
+      "updated_at": "2026-08-24T10:33:25.457715Z",
+      "last_validated_at": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "cred_359526d70d1f5a56",
+      "name": "gh",
+      "connector": "github",
+      "provider_family": "github",
+      "auth_profile": "default",
+      "config": {
+        "auth_type": "public",
+        "max_pages": "1",
+        "owner": "polymetrics-ai",
+        "rate_limit_ip": "127.0.0.1",
+        "repo": "cli"
+      },
+      "created_at": "2026-08-24T10:34:52.541575Z",
+      "updated_at": "2026-08-24T10:34:52.541575Z",
+      "last_validated_at": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "credential_bindings": {
+    "cred_359526d70d1f5a56": {
+      "binding_id": "cbind_8a3eb2f7af52ffb5",
+      "provider_family_declared": false,
+      "auth_profile_declared": false,
+      "declaration_provenance_recorded": true
+    },
+    "cred_7041081e734106e8": {
+      "binding_id": "cbind_76590bca035b805a",
+      "provider_family_declared": false,
+      "auth_profile_declared": false,
+      "declaration_provenance_recorded": true
+    }
+  },
+  "coordination_salt": "828747d9fcc4c25188c64bb8c4aedc1a4a55b0a5c816dcccdd07c5957d854d44",
+  "connections": [
+    {
+      "id": "conn_206bd2e06f84fac6",
+      "name": "gh_issues",
+      "source": {
+        "connector": "github",
+        "credential": "gh"
+      },
+      "destination": {
+        "connector": "warehouse",
+        "credential": "wh"
+      },
+      "streams": {
+        "issues": {
+          "stream_id": "stream_db94409e08eb6f81",
+          "sync_mode": "incremental_append_deduped",
+          "legacy_compatibility": true,
+          "cursor_field": "updated_at",
+          "primary_key": [
+            "node_id"
+          ],
+          "destination_table": "gh_issues"
+        }
+      },
+      "created_at": "2026-08-24T10:33:34.017631Z",
+      "updated_at": "2026-08-24T10:33:34.017631Z"
+    }
+  ],
+  "catalogs": null,
+  "runs": [
+    {
+      "id": "run_65d860d465980a21",
+      "type": "etl",
+      "connection": "gh_issues",
+      "stream": "issues",
+      "status": "failed",
+      "records_read": 0,
+      "records_transformed": 0,
+      "records_loaded": 0,
+      "records_failed": 0,
+      "batch_size": 1000,
+      "transport_phase_measurement": {
+        "extracted_records": 0,
+        "warehouse_parquet_records": 0,
+        "postgresql_applied_records": 0,
+        "extract_elapsed_ns": 3046000,
+        "warehouse_elapsed_ns": 0,
+        "postgresql_elapsed_ns": 0,
+        "source_records": 0,
+        "transformed_records": 0,
+        "copy_applied_records": 0,
+        "source_logical_bytes": 0,
+        "transformed_logical_bytes": 0,
+        "parquet_bytes": 0,
+        "source_read_elapsed_ns": 3046000,
+        "transform_elapsed_ns": 0,
+        "parquet_close_fsync_elapsed_ns": 0,
+        "binary_copy_elapsed_ns": 0,
+        "read_back_elapsed_ns": 0,
+        "index_constraint_build_elapsed_ns": 0,
+        "publish_receipt_elapsed_ns": 0,
+        "checkpoint_elapsed_ns": 0,
+        "critical_path_elapsed_ns": 0,
+        "peak_credit_bytes": 0,
+        "byte_credit_wait_elapsed_ns": 0,
+        "input_decimal_mb_per_second": 0,
+        "input_mib_per_second": 0
+      },
+      "error": "read declarative stream collection: github stream=issues page=0: rate-limit admission: rate-limit policy \"unauthenticated\" requires non-secret config \"rate_limit_ip\" for its declared scope",
+      "started_at": "2026-08-24T10:34:22.126671Z",
+      "completed_at": "2026-08-24T10:34:22.240799Z"
+    },
+    {
+      "id": "run_5255487a8affd830",
+      "type": "etl",
+      "connection": "gh_issues",
+      "stream": "issues",
+      "status": "failed",
+      "records_read": 46,
+      "records_transformed": 0,
+      "records_loaded": 46,
+      "records_failed": 0,
+      "batch_size": 1000,
+      "batch_count": 1,
+      "checkpoint": {
+        "batches": "1",
+        "generation_id": "1",
+        "records_failed": "0",
+        "records_loaded": "46",
+        "records_read": "46",
+        "records_transformed": "0",
+        "state_key": "gh_issues:issues",
+        "sync_mode": "incremental_append_deduped"
+      },
+      "transport_phase_measurement": {
+        "extracted_records": 46,
+        "warehouse_parquet_records": 46,
+        "postgresql_applied_records": 46,
+        "extract_elapsed_ns": 3075199333,
+        "warehouse_elapsed_ns": 480964458,
+        "postgresql_elapsed_ns": 68682167,
+        "source_records": 46,
+        "transformed_records": 46,
+        "copy_applied_records": 46,
+        "source_logical_bytes": 0,
+        "transformed_logical_bytes": 0,
+        "parquet_bytes": 0,
+        "source_read_elapsed_ns": 3075199333,
+        "transform_elapsed_ns": 0,
+        "parquet_close_fsync_elapsed_ns": 0,
+        "binary_copy_elapsed_ns": 68682167,
+        "read_back_elapsed_ns": 12962541,
+        "index_constraint_build_elapsed_ns": 0,
+        "publish_receipt_elapsed_ns": 0,
+        "checkpoint_elapsed_ns": 0,
+        "critical_path_elapsed_ns": 0,
+        "peak_credit_bytes": 0,
+        "byte_credit_wait_elapsed_ns": 0,
+        "input_decimal_mb_per_second": 0,
+        "input_mib_per_second": 0
+      },
+      "error": "source transport stopped at its page budget before exhaustion",
+      "started_at": "2026-08-24T10:35:02.584991Z",
+      "completed_at": "2026-08-24T10:35:06.372887Z"
+    }
+  ],
+  "reverse_plans": null,
+  "reverse_runs": null,
+  "stream_states": {
+    "gh_issues:issues": {
+      "connection": "gh_issues",
+      "stream": "issues",
+      "checkpoint": {
+        "state_version": 1,
+        "source": {
+          "engine": "github",
+          "account_or_cluster": "cred_359526d70d1f5a56",
+          "object_scope": "issues"
+        },
+        "mechanism": "declarative_stream_engine_read",
+        "snapshot_barrier": {
+          "kind": "declarative_page",
+          "token": "NjcwZThiNTBjYmIzYjQ0OGRmMTdhNmQ0YTk0NmFiMzU2ZDAxNmQ3MjhjNTE3NGI2ZTA1NWFkYjczNDk1ZDk5Mw=="
+        },
+        "position": {
+          "primary": "MDAwMDAwMDAwMDAwMDAwMDAwMDE=",
+          "tie_breaker": "NjcwZThiNTBjYmIzYjQ0OGRmMTdhNmQ0YTk0NmFiMzU2ZDAxNmQ3MjhjNTE3NGI2ZTA1NWFkYjczNDk1ZDk5Mw=="
+        },
+        "continuation": {
+          "kind": "engine_pagination_v1",
+          "token": "eyJ2ZXJzaW9uIjoxLCJjb25uZWN0b3IiOiJnaXRodWIiLCJzdHJlYW0iOiJpc3N1ZXMiLCJkZWZpbml0aW9uX3NoYTI1NiI6IjU1NDNmM2M4YTY2ZjA3MTI5NDkwNGM3OWY4MWU4NjBkMjBhNjE0MGMyOGNhZDQzYmRkY2VkOTQ0NzRmYzhmYzAiLCJza2lwcGVkX3BhZ2VzIjoxfQ=="
+        },
+        "position_observed": true,
+        "partitions": [],
+        "source_generation": "sCcTApJ2CQozGzHNSdqhaG+KFLQy5vmsWEk7uMbZne0=",
+        "schema_version": "declarative-stream-v1",
+        "protocol_version": "engine-read-v1",
+        "dedupe_identity": {
+          "kind": "declarative_page",
+          "value": "NjcwZThiNTBjYmIzYjQ0OGRmMTdhNmQ0YTk0NmFiMzU2ZDAxNmQ3MjhjNTE3NGI2ZTA1NWFkYjczNDk1ZDk5Mw=="
+        },
+        "dedupe_window": {
+          "kind": "declarative_page",
+          "start": "NjcwZThiNTBjYmIzYjQ0OGRmMTdhNmQ0YTk0NmFiMzU2ZDAxNmQ3MjhjNTE3NGI2ZTA1NWFkYjczNDk1ZDk5Mw==",
+          "end": "NjcwZThiNTBjYmIzYjQ0OGRmMTdhNmQ0YTk0NmFiMzU2ZDAxNmQ3MjhjNTE3NGI2ZTA1NWFkYjczNDk1ZDk5Mw=="
+        },
+        "observed_at": "2026-08-24T10:35:05.778648Z",
+        "committed_at": "2026-08-24T10:35:06.346212Z"
+      },
+      "committed_transport_receipts": [
+        {
+          "receipt_id": "stage_add2c4f7cfc64925",
+          "owner": "conn_206bd2e06f84fac6",
+          "generation": 1,
+          "stream": "issues",
+          "mode": "incremental_dedupe",
+          "checkpoint_sha256": "6a6324df184163d820fdc34e20e83279319540aa0f16c509e68de67eb8f83a92",
+          "tombstones_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "manifest_sha256": "16cfaed983b5fa15f41eeddd6ebf7a4362e2afd2482f8db0f2539ccb38170b6d",
+          "content_sha256": "b280560a21278cb6705567f0a6b6db6d170dc36ac4898ffe668e5d960f7daa1c",
+          "parquet_sha256": "dd7f49a2ce2a12c59acc38d5a1e92a7d6dbd2c1a4dc1e6599e6d44f0afdf0123",
+          "records": 46,
+          "tombstones": 0
+        }
+      ],
+      "transport_receipt_association_version": 1,
+      "generation_id": 1,
+      "active_work_id": "run_5255487a8affd830",
+      "active_work_fence": 1,
+      "active_work_lease_until": "2026-08-24T10:37:06.360763Z",
+      "updated_at": "2026-08-24T10:35:06.346212Z"
+    }
+  }
+}

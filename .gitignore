@@ -1,0 +1,7 @@
+.build/
+bin/pm
+data/pm/.polymetrics/vault/
+data/pm/.polymetrics/logs/
+data/pm/.polymetrics/warehouse/
+brain/.skills-catalog/
+.omp/sessions/
